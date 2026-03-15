@@ -447,10 +447,17 @@ export async function activate(ctx: vscode.ExtensionContext) {
   // --- Status bar item (always visible confirmation) ---
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
   statusBar.text = '$(book) KB Vault';
-  statusBar.tooltip = `KB Vault active\nGlobal: ${globalPath}${manager.workspacePath ? '\nWorkspace: ' + manager.workspacePath : ''}`;
+  statusBar.tooltip = `KB Vault active\nGlobal: ${globalPath}${manager.workspacePath ? '\nWorkspace: ' + manager.workspacePath : ''}\nClick to refresh`;
   statusBar.command = 'kbvault.refresh';
   statusBar.show();
   ctx.subscriptions.push(statusBar);
+
+  // Output channel for diagnostics
+  const out = vscode.window.createOutputChannel('KB Vault');
+  out.appendLine(`[KB Vault] Activated`);
+  out.appendLine(`[KB Vault] Global vault: ${globalPath}`);
+  if (manager.workspacePath) out.appendLine(`[KB Vault] Workspace vault: ${manager.workspacePath}`);
+  ctx.subscriptions.push(out);
 
   // --- Staleness check on workspace open (deferred so it doesn't block activation) ---
   if (config.get<boolean>('autoDetectStaleness') && workspaceFolder) {
@@ -472,18 +479,11 @@ export async function activate(ctx: vscode.ExtensionContext) {
             message += `${outdated.map(r => r.file).join(', ')} may be outdated.`;
           }
 
-          // Use commands directly — no extension lookup needed
-          const action = await vscode.window.showInformationMessage(
-            message.trim(),
-            'Generate CLAUDE.md',
-            'Generate Copilot',
-            'Dismiss'
-          );
-          if (action === 'Generate CLAUDE.md') {
-            await vscode.commands.executeCommand('kbvault.generateClaudeMd');
-          } else if (action === 'Generate Copilot') {
-            await vscode.commands.executeCommand('kbvault.generateCopilotInstructions');
-          }
+          // Log to output channel — action buttons cause dev-mode errors, use output instead
+          out.appendLine(`[KB Vault] Staleness: ${message.trim()}`);
+          out.appendLine(`[KB Vault] Run "KB Vault: Generate CLAUDE.md" or "KB Vault: Generate Copilot Instructions" from the Command Palette`);
+          // Show notification without action buttons to avoid dev-mode "extension not found" error
+          vscode.window.showInformationMessage(message.trim());
         }
       } catch {
         // Silently ignore staleness errors — non-critical
