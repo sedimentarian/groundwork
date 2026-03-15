@@ -444,39 +444,52 @@ export async function activate(ctx: vscode.ExtensionContext) {
     }),
   );
 
-  // --- Staleness check on workspace open ---
+  // --- Status bar item (always visible confirmation) ---
+  const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
+  statusBar.text = '$(book) KB Vault';
+  statusBar.tooltip = `KB Vault active\nGlobal: ${globalPath}${manager.workspacePath ? '\nWorkspace: ' + manager.workspacePath : ''}`;
+  statusBar.command = 'kbvault.refresh';
+  statusBar.show();
+  ctx.subscriptions.push(statusBar);
+
+  // --- Staleness check on workspace open (deferred so it doesn't block activation) ---
   if (config.get<boolean>('autoDetectStaleness') && workspaceFolder) {
-    const staleResults = await checkStaleness(manager, workspaceFolder.uri.fsPath);
-    const staleFiles = staleResults.filter(r => r.isStale);
+    // Run after a short delay so all commands are settled
+    setTimeout(async () => {
+      try {
+        const staleResults = await checkStaleness(manager, workspaceFolder.uri.fsPath);
+        const staleFiles = staleResults.filter(r => r.isStale);
 
-    if (staleFiles.length > 0) {
-      const missing = staleFiles.filter(r => r.aiFileMtime === null);
-      const outdated = staleFiles.filter(r => r.aiFileMtime !== null);
+        if (staleFiles.length > 0) {
+          const missing = staleFiles.filter(r => r.aiFileMtime === null);
+          const outdated = staleFiles.filter(r => r.aiFileMtime !== null);
 
-      let message = 'KB Vault: ';
-      if (missing.length > 0) {
-        message += `${missing.map(r => r.file).join(', ')} can be generated from vault content. `;
+          let message = 'KB Vault: ';
+          if (missing.length > 0) {
+            message += `${missing.map(r => r.file).join(', ')} can be generated. `;
+          }
+          if (outdated.length > 0) {
+            message += `${outdated.map(r => r.file).join(', ')} may be outdated.`;
+          }
+
+          // Use commands directly — no extension lookup needed
+          const action = await vscode.window.showInformationMessage(
+            message.trim(),
+            'Generate CLAUDE.md',
+            'Generate Copilot',
+            'Dismiss'
+          );
+          if (action === 'Generate CLAUDE.md') {
+            await vscode.commands.executeCommand('kbvault.generateClaudeMd');
+          } else if (action === 'Generate Copilot') {
+            await vscode.commands.executeCommand('kbvault.generateCopilotInstructions');
+          }
+        }
+      } catch {
+        // Silently ignore staleness errors — non-critical
       }
-      if (outdated.length > 0) {
-        message += `${outdated.map(r => r.file).join(', ')} may be outdated.`;
-      }
-
-      const action = await vscode.window.showInformationMessage(
-        message.trim(),
-        'Regenerate CLAUDE.md',
-        'Regenerate Copilot',
-        'Dismiss'
-      );
-
-      if (action === 'Regenerate CLAUDE.md') {
-        await vscode.commands.executeCommand('kbvault.generateClaudeMd');
-      } else if (action === 'Regenerate Copilot') {
-        await vscode.commands.executeCommand('kbvault.generateCopilotInstructions');
-      }
-    }
+    }, 3000);
   }
-
-  vscode.window.showInformationMessage(`KB Vault active: ${globalPath}`);
 }
 
 export function deactivate() {}
