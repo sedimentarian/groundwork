@@ -1,8 +1,8 @@
 {
-  "name": "knowledge-ext",
-  "displayName": "Knowledge Vault",
+  "name": "kb-vault",
+  "displayName": "KB Vault",
   "description": "GTD-powered knowledge and context management for AI coding assistants",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "lwbailey",
   "engines": {
     "vscode": "^1.85.0"
@@ -14,105 +14,96 @@
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
-      {
-        "command": "knowledgeVault.openVault",
-        "title": "Knowledge Vault: Open Vault Folder"
-      },
-      {
-        "command": "knowledgeVault.newNote",
-        "title": "Knowledge Vault: New Note"
-      },
-      {
-        "command": "knowledgeVault.newTask",
-        "title": "Knowledge Vault: New Task"
-      },
-      {
-        "command": "knowledgeVault.compileContext",
-        "title": "Knowledge Vault: Compile Context for AI"
-      },
-      {
-        "command": "knowledgeVault.generateClaudeMd",
-        "title": "Knowledge Vault: Generate CLAUDE.md"
-      },
-      {
-        "command": "knowledgeVault.generateCopilotInstructions",
-        "title": "Knowledge Vault: Generate Copilot Instructions"
-      },
-      {
-        "command": "knowledgeVault.logActivity",
-        "title": "Knowledge Vault: Log Activity"
-      },
-      {
-        "command": "knowledgeVault.refresh",
-        "title": "Knowledge Vault: Refresh",
-        "icon": "$(refresh)"
-      },
-      {
-        "command": "knowledgeVault.setTaskStatus",
-        "title": "Knowledge Vault: Set Task Status"
-      }
+      { "command": "kbvault.openVault", "title": "KB Vault: Open Vault Folder" },
+      { "command": "kbvault.newNote", "title": "KB Vault: New Note" },
+      { "command": "kbvault.newTask", "title": "KB Vault: New Task" },
+      { "command": "kbvault.compileContext", "title": "KB Vault: Compile Context for AI" },
+      { "command": "kbvault.generateClaudeMd", "title": "KB Vault: Generate CLAUDE.md" },
+      { "command": "kbvault.generateCopilotInstructions", "title": "KB Vault: Generate Copilot Instructions" },
+      { "command": "kbvault.logActivity", "title": "KB Vault: Log Activity" },
+      { "command": "kbvault.refresh", "title": "KB Vault: Refresh", "icon": "$(refresh)" },
+      { "command": "kbvault.setTaskStatus", "title": "KB Vault: Set Task Status" },
+      { "command": "kbvault.deleteNote", "title": "KB Vault: Delete Note" },
+      { "command": "kbvault.markDone", "title": "KB Vault: Mark Done", "icon": "$(check)" },
+      { "command": "kbvault.initWorkspace", "title": "KB Vault: Initialize Workspace Vault" }
     ],
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "knowledge-vault",
-          "title": "Knowledge Vault",
+          "id": "kb-vault",
+          "title": "KB Vault",
           "icon": "$(book)"
         }
       ]
     },
     "views": {
-      "knowledge-vault": [
-        {
-          "id": "knowledgeVault.tasks",
-          "name": "Tasks"
-        },
-        {
-          "id": "knowledgeVault.vault",
-          "name": "Vault"
-        },
-        {
-          "id": "knowledgeVault.sessions",
-          "name": "Recent Activity"
-        }
+      "kb-vault": [
+        { "id": "kbvault.tasks", "name": "Tasks" },
+        { "id": "kbvault.vault", "name": "Vault" },
+        { "id": "kbvault.sessions", "name": "Recent Activity" }
       ]
     },
     "menus": {
       "view/title": [
         {
-          "command": "knowledgeVault.refresh",
-          "when": "view =~ /knowledgeVault/",
+          "command": "kbvault.refresh",
+          "when": "view =~ /kbvault/",
           "group": "navigation"
         }
       ],
       "view/item/context": [
         {
-          "command": "knowledgeVault.setTaskStatus",
-          "when": "view == knowledgeVault.tasks"
+          "command": "kbvault.setTaskStatus",
+          "when": "view == kbvault.tasks && viewItem == task-item"
         },
         {
-          "command": "knowledgeVault.compileContext",
-          "when": "view == knowledgeVault.vault || view == knowledgeVault.tasks"
+          "command": "kbvault.markDone",
+          "when": "view == kbvault.tasks && viewItem == task-item"
+        },
+        {
+          "command": "kbvault.compileContext",
+          "when": "view == kbvault.vault || view == kbvault.tasks"
+        },
+        {
+          "command": "kbvault.deleteNote",
+          "when": "viewItem == vault-file || viewItem == task-item"
         }
       ]
     },
     "configuration": {
-      "title": "Knowledge Vault",
+      "title": "KB Vault",
       "properties": {
-        "knowledgeVault.vaultPath": {
+        "kbvault.globalPath": {
           "type": "string",
           "default": "",
-          "description": "Path to the knowledge vault directory. Defaults to ~/.knowledge-vault"
+          "description": "Path to the global vault directory. Defaults to ~/.kbvault"
         },
-        "knowledgeVault.gtd.contexts": {
+        "kbvault.gtd.contexts": {
           "type": "array",
           "default": ["@computer", "@phone", "@office", "@home", "@errands", "@anywhere"],
           "description": "GTD contexts for task categorization"
         },
-        "knowledgeVault.context.maxTokenEstimate": {
+        "kbvault.context.maxTokenEstimate": {
           "type": "number",
           "default": 4000,
           "description": "Approximate max tokens when compiling AI context"
+        },
+        "kbvault.autoDetectStaleness": {
+          "type": "boolean",
+          "default": true,
+          "description": "Auto-detect stale CLAUDE.md/copilot-instructions.md on workspace open"
+        },
+        "kbvault.newTaskDefaultScope": {
+          "type": "string",
+          "enum": ["workspace", "global"],
+          "default": "workspace",
+          "description": "Default scope when creating new tasks (if workspace vault exists)"
+        },
+        "kbvault.newNoteDefaultScope": {
+          "type": "string",
+          "enum": ["global", "workspace"],
+          "default": "global",
+          "description": "Default scope when creating new notes"
         }
       }
     }
