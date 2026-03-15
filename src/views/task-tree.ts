@@ -39,9 +39,9 @@ export class TaskTreeProvider implements vscode.TreeDataProvider<TaskTreeItem> {
     const isDone = note.frontmatter.status === 'done' || note.frontmatter.status === 'cancelled';
     const item = new vscode.TreeItem(title, vscode.TreeItemCollapsibleState.None);
 
-    // Click opens file
+    // Click opens in WYSIWYG editor
     item.command = {
-      command: 'vscode.open',
+      command: 'kbvault.openEditor',
       title: 'Open Task',
       arguments: [vscode.Uri.file(note.path)],
     };

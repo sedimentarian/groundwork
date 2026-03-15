@@ -7,25 +7,90 @@
   "engines": {
     "vscode": "^1.85.0"
   },
-  "categories": ["Other"],
+  "categories": [
+    "Other"
+  ],
   "activationEvents": [
     "onStartupFinished"
   ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
-      { "command": "kbvault.openVault",                "title": "KB Vault: Open Vault Folder",               "shortTitle": "Open Vault" },
-      { "command": "kbvault.newNote",                  "title": "KB Vault: New Note",                        "shortTitle": "New Note",                  "icon": "$(add)" },
-      { "command": "kbvault.newTask",                  "title": "KB Vault: New Task",                        "shortTitle": "New Task",                  "icon": "$(add)" },
-      { "command": "kbvault.compileContext",            "title": "KB Vault: Compile Context for AI",          "shortTitle": "Compile Context",           "icon": "$(export)" },
-      { "command": "kbvault.generateClaudeMd",         "title": "KB Vault: Generate CLAUDE.md",              "shortTitle": "Generate CLAUDE.md" },
-      { "command": "kbvault.generateCopilotInstructions", "title": "KB Vault: Generate Copilot Instructions","shortTitle": "Generate Copilot Instructions" },
-      { "command": "kbvault.logActivity",              "title": "KB Vault: Log Activity",                    "shortTitle": "Log Activity",              "icon": "$(note)" },
-      { "command": "kbvault.refresh",                  "title": "KB Vault: Refresh",                         "shortTitle": "Refresh",                   "icon": "$(refresh)" },
-      { "command": "kbvault.setTaskStatus",            "title": "KB Vault: Set Task Status",                 "shortTitle": "Set Status",                "icon": "$(arrow-swap)" },
-      { "command": "kbvault.deleteNote",               "title": "KB Vault: Delete Note",                     "shortTitle": "Delete",                    "icon": "$(trash)" },
-      { "command": "kbvault.markDone",                 "title": "KB Vault: Mark Done",                       "shortTitle": "Mark Done",                 "icon": "$(check)" },
-      { "command": "kbvault.initWorkspace",            "title": "KB Vault: Initialize Workspace Vault",      "shortTitle": "Init Workspace Vault",      "icon": "$(folder-add)" }
+      {
+        "command": "kbvault.openEditor",
+        "title": "KB Vault: Open in WYSIWYG Editor",
+        "shortTitle": "Open Editor",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "kbvault.openVault",
+        "title": "KB Vault: Open Vault Folder",
+        "shortTitle": "Open Vault"
+      },
+      {
+        "command": "kbvault.newNote",
+        "title": "KB Vault: New Note",
+        "shortTitle": "New Note",
+        "icon": "$(add)"
+      },
+      {
+        "command": "kbvault.newTask",
+        "title": "KB Vault: New Task",
+        "shortTitle": "New Task",
+        "icon": "$(add)"
+      },
+      {
+        "command": "kbvault.compileContext",
+        "title": "KB Vault: Compile Context for AI",
+        "shortTitle": "Compile Context",
+        "icon": "$(export)"
+      },
+      {
+        "command": "kbvault.generateClaudeMd",
+        "title": "KB Vault: Generate CLAUDE.md",
+        "shortTitle": "Generate CLAUDE.md"
+      },
+      {
+        "command": "kbvault.generateCopilotInstructions",
+        "title": "KB Vault: Generate Copilot Instructions",
+        "shortTitle": "Generate Copilot Instructions"
+      },
+      {
+        "command": "kbvault.logActivity",
+        "title": "KB Vault: Log Activity",
+        "shortTitle": "Log Activity",
+        "icon": "$(note)"
+      },
+      {
+        "command": "kbvault.refresh",
+        "title": "KB Vault: Refresh",
+        "shortTitle": "Refresh",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "kbvault.setTaskStatus",
+        "title": "KB Vault: Set Task Status",
+        "shortTitle": "Set Status",
+        "icon": "$(arrow-swap)"
+      },
+      {
+        "command": "kbvault.deleteNote",
+        "title": "KB Vault: Delete Note",
+        "shortTitle": "Delete",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "kbvault.markDone",
+        "title": "KB Vault: Mark Done",
+        "shortTitle": "Mark Done",
+        "icon": "$(check)"
+      },
+      {
+        "command": "kbvault.initWorkspace",
+        "title": "KB Vault: Initialize Workspace Vault",
+        "shortTitle": "Init Workspace Vault",
+        "icon": "$(folder-add)"
+      }
     ],
     "viewsContainers": {
       "activitybar": [
@@ -38,9 +103,18 @@
     },
     "views": {
       "kb-vault": [
-        { "id": "kbvault.tasks", "name": "Tasks" },
-        { "id": "kbvault.vault", "name": "Vault" },
-        { "id": "kbvault.sessions", "name": "Recent Activity" }
+        {
+          "id": "kbvault.tasks",
+          "name": "Tasks"
+        },
+        {
+          "id": "kbvault.vault",
+          "name": "Vault"
+        },
+        {
+          "id": "kbvault.sessions",
+          "name": "Recent Activity"
+        }
       ]
     },
     "menus": {
@@ -109,7 +183,14 @@
         },
         "kbvault.gtd.contexts": {
           "type": "array",
-          "default": ["@computer", "@phone", "@office", "@home", "@errands", "@anywhere"],
+          "default": [
+            "@computer",
+            "@phone",
+            "@office",
+            "@home",
+            "@errands",
+            "@anywhere"
+          ],
           "description": "GTD contexts for task categorization"
         },
         "kbvault.context.maxTokenEstimate": {
@@ -124,13 +205,19 @@
         },
         "kbvault.newTaskDefaultScope": {
           "type": "string",
-          "enum": ["workspace", "global"],
+          "enum": [
+            "workspace",
+            "global"
+          ],
           "default": "workspace",
           "description": "Default scope when creating new tasks (if workspace vault exists)"
         },
         "kbvault.newNoteDefaultScope": {
           "type": "string",
-          "enum": ["global", "workspace"],
+          "enum": [
+            "global",
+            "workspace"
+          ],
           "default": "global",
           "description": "Default scope when creating new notes"
         }
@@ -147,5 +234,8 @@
     "@types/node": "^20.11.0",
     "@types/vscode": "^1.85.0",
     "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "@toast-ui/editor": "^3.2.2"
   }
 }

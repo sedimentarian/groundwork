@@ -9,10 +9,12 @@ import { VaultTreeProvider } from './views/vault-tree';
 import { TaskTreeProvider } from './views/task-tree';
 import { SessionTreeProvider } from './views/session-tree';
 import { checkStaleness } from './vault/staleness';
+import { EditorPanelManager } from './views/editor-panel';
 
 let manager: VaultManager;
 let contextGen: ContextGenerator;
 let sessionTracker: SessionTracker;
+let editorPanels: EditorPanelManager;
 
 export async function activate(ctx: vscode.ExtensionContext) {
   const config = vscode.workspace.getConfiguration('kbvault');
@@ -54,6 +56,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
   const vaultTree = new VaultTreeProvider(manager);
   const taskTree = new TaskTreeProvider(manager);
   const sessionTree = new SessionTreeProvider(manager);
+  editorPanels = new EditorPanelManager(manager, ctx.extensionUri);
 
   ctx.subscriptions.push(
     vscode.window.registerTreeDataProvider('kbvault.vault', vaultTree),
@@ -94,6 +97,16 @@ export async function activate(ctx: vscode.ExtensionContext) {
 
   // --- Commands ---
   ctx.subscriptions.push(
+    // Open in WYSIWYG editor
+    vscode.commands.registerCommand('kbvault.openEditor', async (uri?: vscode.Uri) => {
+      const filePath = uri?.fsPath ?? vscode.window.activeTextEditor?.document.uri.fsPath;
+      if (!filePath || !manager.isVaultFile(filePath)) {
+        vscode.window.showWarningMessage('Select a vault file to open.');
+        return;
+      }
+      await editorPanels.openFile(filePath);
+    }),
+
     // Refresh
     vscode.commands.registerCommand('kbvault.refresh', refreshAll),
 
@@ -161,9 +174,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
 
       await sessionTracker.log({ action: 'create', file: filePath });
       refreshAll();
-
-      const doc = await vscode.workspace.openTextDocument(filePath);
-      await vscode.window.showTextDocument(doc);
+      await editorPanels.openFile(filePath);
     }),
 
     // New Task
@@ -209,9 +220,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
 
       await sessionTracker.log({ action: 'create', file: filePath });
       refreshAll();
-
-      const doc = await vscode.workspace.openTextDocument(filePath);
-      await vscode.window.showTextDocument(doc);
+      await editorPanels.openFile(filePath);
     }),
 
     // Set Task Status (full status picker)

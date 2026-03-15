@@ -45,8 +45,8 @@ export class VaultTreeProvider implements vscode.TreeDataProvider<VaultTreeItem>
 
     if (!file.isDirectory) {
       item.command = {
-        command: 'vscode.open',
-        title: 'Open Note',
+        command: 'kbvault.openEditor',
+        title: 'Open in WYSIWYG Editor',
         arguments: [vscode.Uri.file(file.path)],
       };
       item.iconPath = new vscode.ThemeIcon('file');
