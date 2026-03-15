@@ -98,7 +98,6 @@ export class EditorPanelManager {
     body: string
   ): string {
     const nonce = getNonce();
-    const isTask = frontmatter.type === 'task';
     const statusOptions = Object.entries(GTD_LISTS)
       .map(([k, v]) => `<option value="${k}" ${frontmatter.status === k ? 'selected' : ''}>${v}</option>`)
       .join('');
@@ -223,7 +222,6 @@ export class EditorPanelManager {
       <option value="reference" ${frontmatter.type === 'reference' ? 'selected' : ''}>Reference</option>
     </select>
   </div>
-  ${isTask ? `
   <div class="field">
     <label>Status</label>
     <select id="fm-status" onchange="statusChanged()">${statusOptions}</select>
@@ -240,7 +238,6 @@ export class EditorPanelManager {
     <label>Context</label>
     <input id="fm-context" value="${escapeAttr(contextValue)}" placeholder="@computer, @phone" />
   </div>
-  ` : ''}
   <div class="field">
     <label>Project</label>
     <input id="fm-project" value="${escapeAttr(frontmatter.project ?? '')}" />
