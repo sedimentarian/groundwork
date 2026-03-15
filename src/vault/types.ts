@@ -33,6 +33,7 @@ export interface VaultFile {
   name: string;
   isDirectory: boolean;
   children?: VaultFile[];
+  source: VaultScope;
 }
 
 export interface ParsedNote {
@@ -41,6 +42,7 @@ export interface ParsedNote {
   frontmatter: NoteFrontmatter;
   body: string;
   raw: string;
+  source: VaultScope;
 }
 
 export interface SessionEntry {
@@ -48,4 +50,13 @@ export interface SessionEntry {
   action: 'open' | 'save' | 'create' | 'status_change' | 'context_compile' | 'activity_log';
   file?: string;
   detail?: string;
+}
+
+/** Which vault root a file belongs to */
+export type VaultScope = 'global' | 'workspace';
+
+/** Configuration for VaultManager */
+export interface VaultManagerConfig {
+  globalPath: string;
+  workspacePath?: string;
 }
