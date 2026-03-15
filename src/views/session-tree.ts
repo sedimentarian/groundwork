@@ -1,13 +1,13 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { VaultStore } from '../vault/store';
+import { VaultManager } from '../vault/manager';
 import { SessionEntry } from '../vault/types';
 
 export class SessionTreeProvider implements vscode.TreeDataProvider<SessionEntry> {
   private _onDidChangeTreeData = new vscode.EventEmitter<SessionEntry | undefined>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
-  constructor(private store: VaultStore) {}
+  constructor(private manager: VaultManager) {}
 
   refresh(): void {
     this._onDidChangeTreeData.fire(undefined);
@@ -40,7 +40,7 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<SessionEntry
 
   async getChildren(): Promise<SessionEntry[]> {
     try {
-      const entries = await this.store.getRecentSessions(3);
+      const entries = await this.manager.getRecentSessions(3);
       return entries.slice(0, 50); // Show last 50 entries
     } catch {
       return [];

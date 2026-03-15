@@ -1,31 +1,53 @@
 import * as vscode from 'vscode';
-import * as path from 'path';
-import { VaultStore } from '../vault/store';
-import { VaultFile } from '../vault/types';
+import { VaultManager } from '../vault/manager';
+import { VaultFile, VaultScope } from '../vault/types';
 
-export class VaultTreeProvider implements vscode.TreeDataProvider<VaultFile> {
-  private _onDidChangeTreeData = new vscode.EventEmitter<VaultFile | undefined>();
+/** A root node representing a vault scope */
+class VaultRoot {
+  constructor(
+    public readonly scope: VaultScope,
+    public readonly label: string
+  ) {}
+}
+
+type VaultTreeItem = VaultRoot | VaultFile;
+
+export class VaultTreeProvider implements vscode.TreeDataProvider<VaultTreeItem> {
+  private _onDidChangeTreeData = new vscode.EventEmitter<VaultTreeItem | undefined>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
-  constructor(private store: VaultStore) {}
+  constructor(private manager: VaultManager) {}
 
   refresh(): void {
     this._onDidChangeTreeData.fire(undefined);
   }
 
-  getTreeItem(element: VaultFile): vscode.TreeItem {
+  getTreeItem(element: VaultTreeItem): vscode.TreeItem {
+    if (element instanceof VaultRoot) {
+      const icon = element.scope === 'global' ? 'globe' : 'folder-library';
+      const item = new vscode.TreeItem(
+        element.label,
+        vscode.TreeItemCollapsibleState.Expanded
+      );
+      item.iconPath = new vscode.ThemeIcon(icon);
+      item.contextValue = `vault-root-${element.scope}`;
+      return item;
+    }
+
+    // VaultFile
+    const file = element as VaultFile;
     const item = new vscode.TreeItem(
-      element.name,
-      element.isDirectory
+      file.name,
+      file.isDirectory
         ? vscode.TreeItemCollapsibleState.Collapsed
         : vscode.TreeItemCollapsibleState.None
     );
 
-    if (!element.isDirectory) {
+    if (!file.isDirectory) {
       item.command = {
         command: 'vscode.open',
         title: 'Open Note',
-        arguments: [vscode.Uri.file(element.path)],
+        arguments: [vscode.Uri.file(file.path)],
       };
       item.iconPath = new vscode.ThemeIcon('file');
       item.contextValue = 'vault-file';
@@ -34,16 +56,36 @@ export class VaultTreeProvider implements vscode.TreeDataProvider<VaultFile> {
       item.contextValue = 'vault-folder';
     }
 
-    item.tooltip = element.relativePath;
+    item.tooltip = file.relativePath;
     return item;
   }
 
-  async getChildren(element?: VaultFile): Promise<VaultFile[]> {
-    const dir = element?.path ?? this.store.rootDir;
-    try {
-      return await this.store.listFiles(dir);
-    } catch {
-      return [];
+  async getChildren(element?: VaultTreeItem): Promise<VaultTreeItem[]> {
+    if (!element) {
+      // Root level: show scope roots
+      const roots: VaultTreeItem[] = [new VaultRoot('global', 'Global')];
+      if (this.manager.workspaceStore) {
+        roots.unshift(new VaultRoot('workspace', 'Workspace'));
+      }
+      return roots;
     }
+
+    if (element instanceof VaultRoot) {
+      const store = this.manager.storeFor(element.scope);
+      if (!store) return [];
+      try {
+        return await store.listFiles();
+      } catch {
+        return [];
+      }
+    }
+
+    // VaultFile directory — return pre-populated children
+    const dir = element as VaultFile;
+    if (dir.isDirectory && dir.children) {
+      return dir.children;
+    }
+
+    return [];
   }
 }

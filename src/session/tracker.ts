@@ -1,22 +1,22 @@
 import * as vscode from 'vscode';
-import { VaultStore } from '../vault/store';
+import { VaultManager } from '../vault/manager';
 import { SessionEntry } from '../vault/types';
 
 export class SessionTracker implements vscode.Disposable {
   private disposables: vscode.Disposable[] = [];
 
-  constructor(private store: VaultStore) {}
+  constructor(private manager: VaultManager) {}
 
   /** Start tracking editor activity within the vault */
   activate(): void {
     this.disposables.push(
       vscode.workspace.onDidOpenTextDocument(doc => {
-        if (this.isVaultFile(doc.uri)) {
+        if (this.manager.isVaultFile(doc.uri.fsPath)) {
           this.log({ action: 'open', file: doc.uri.fsPath });
         }
       }),
       vscode.workspace.onDidSaveTextDocument(doc => {
-        if (this.isVaultFile(doc.uri)) {
+        if (this.manager.isVaultFile(doc.uri.fsPath)) {
           this.log({ action: 'save', file: doc.uri.fsPath });
         }
       })
@@ -24,14 +24,10 @@ export class SessionTracker implements vscode.Disposable {
   }
 
   async log(entry: Omit<SessionEntry, 'timestamp'>): Promise<void> {
-    await this.store.logSession({
+    await this.manager.logSession({
       ...entry,
       timestamp: new Date().toISOString(),
     });
-  }
-
-  private isVaultFile(uri: vscode.Uri): boolean {
-    return uri.fsPath.startsWith(this.store.rootDir);
   }
 
   dispose(): void {

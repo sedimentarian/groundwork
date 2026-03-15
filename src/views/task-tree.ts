@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { VaultStore } from '../vault/store';
+import { VaultManager } from '../vault/manager';
 import { ParsedNote, TaskStatus, GTD_LISTS } from '../vault/types';
 
 type TaskTreeItem = TaskGroup | TaskItem;
@@ -18,7 +18,7 @@ export class TaskTreeProvider implements vscode.TreeDataProvider<TaskTreeItem> {
 
   private cache: Map<TaskStatus, ParsedNote[]> = new Map();
 
-  constructor(private store: VaultStore) {}
+  constructor(private manager: VaultManager) {}
 
   refresh(): void {
     this.cache.clear();
@@ -36,23 +36,31 @@ export class TaskTreeProvider implements vscode.TreeDataProvider<TaskTreeItem> {
 
     const note = element.note;
     const title = note.frontmatter.title ?? note.relativePath;
+    const isDone = note.frontmatter.status === 'done' || note.frontmatter.status === 'cancelled';
     const item = new vscode.TreeItem(title, vscode.TreeItemCollapsibleState.None);
 
+    // Click opens file
     item.command = {
       command: 'vscode.open',
       title: 'Open Task',
       arguments: [vscode.Uri.file(note.path)],
     };
 
+    // Build description: scope icon + context tags
+    const scopeIcon = note.source === 'workspace' ? '📁' : '🌐';
     const contexts = note.frontmatter.context;
-    if (contexts && Array.isArray(contexts) && contexts.length > 0) {
-      item.description = contexts.join(', ');
-    }
+    const contextStr = contexts && Array.isArray(contexts) && contexts.length > 0
+      ? contexts.join(', ')
+      : '';
+    item.description = `${scopeIcon} ${contextStr}`.trim();
 
-    if (note.frontmatter.priority === 'high') {
-      item.iconPath = new vscode.ThemeIcon('circle-filled', new vscode.ThemeColor('errorForeground'));
+    // Checkbox-style icon
+    if (isDone) {
+      item.iconPath = new vscode.ThemeIcon('pass-filled', new vscode.ThemeColor('testing.iconPassed'));
+    } else if (note.frontmatter.priority === 'high') {
+      item.iconPath = new vscode.ThemeIcon('circle-large-outline', new vscode.ThemeColor('errorForeground'));
     } else {
-      item.iconPath = new vscode.ThemeIcon('circle-outline');
+      item.iconPath = new vscode.ThemeIcon('circle-large-outline');
     }
 
     item.contextValue = 'task-item';
@@ -64,7 +72,7 @@ export class TaskTreeProvider implements vscode.TreeDataProvider<TaskTreeItem> {
   async getChildren(element?: TaskTreeItem): Promise<TaskTreeItem[]> {
     if (!element) {
       // Root: show GTD status groups that have tasks
-      const allTasks = await this.store.queryNotes({ type: 'task' });
+      const allTasks = await this.manager.queryNotes({ type: 'task' });
 
       this.cache.clear();
       for (const task of allTasks) {
@@ -73,8 +81,8 @@ export class TaskTreeProvider implements vscode.TreeDataProvider<TaskTreeItem> {
         this.cache.get(status)!.push(task);
       }
 
-      // Show groups in GTD order, only if they have tasks
-      const order: TaskStatus[] = ['inbox', 'next', 'active', 'waiting', 'someday', 'done'];
+      // Show all GTD groups in order, only if they have tasks
+      const order: TaskStatus[] = ['inbox', 'next', 'active', 'waiting', 'someday', 'done', 'cancelled'];
       return order
         .filter(s => this.cache.has(s) && this.cache.get(s)!.length > 0)
         .map(s => new TaskGroup(s, this.cache.get(s)!));
