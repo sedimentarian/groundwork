@@ -1,82 +1,158 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as os from 'os';
-import { VaultStore } from './vault/store';
-import { TaskStatus, GTD_LISTS } from './vault/types';
+import { VaultManager } from './vault/manager';
+import { TaskStatus, GTD_LISTS, VaultScope } from './vault/types';
 import { ContextGenerator } from './context/generator';
 import { SessionTracker } from './session/tracker';
 import { VaultTreeProvider } from './views/vault-tree';
 import { TaskTreeProvider } from './views/task-tree';
 import { SessionTreeProvider } from './views/session-tree';
+import { checkStaleness } from './vault/staleness';
 
-let store: VaultStore;
+let manager: VaultManager;
 let contextGen: ContextGenerator;
 let sessionTracker: SessionTracker;
 
 export async function activate(ctx: vscode.ExtensionContext) {
-  // Resolve vault path
-  const config = vscode.workspace.getConfiguration('knowledgeVault');
-  const configuredPath = config.get<string>('vaultPath');
-  const vaultPath = configuredPath || path.join(os.homedir(), '.knowledge-vault');
+  const config = vscode.workspace.getConfiguration('kbvault');
 
-  // Init core
-  store = new VaultStore(vaultPath);
-  await store.init();
-  contextGen = new ContextGenerator(store);
-  sessionTracker = new SessionTracker(store);
+  // Resolve global vault path
+  const configuredGlobal = config.get<string>('globalPath');
+  const globalPath = configuredGlobal || path.join(os.homedir(), '.kbvault');
+
+  // Resolve workspace vault path
+  const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+  const workspaceVaultPath = workspaceFolder
+    ? path.join(workspaceFolder.uri.fsPath, '.kbvault')
+    : undefined;
+
+  // Check if workspace vault exists (don't create it automatically)
+  let workspaceVaultExists = false;
+  if (workspaceVaultPath) {
+    try {
+      const stat = await vscode.workspace.fs.stat(vscode.Uri.file(workspaceVaultPath));
+      workspaceVaultExists = stat.type === vscode.FileType.Directory;
+    } catch {
+      // Doesn't exist yet — that's fine
+    }
+  }
+
+  // Init VaultManager
+  manager = new VaultManager({
+    globalPath,
+    workspacePath: workspaceVaultExists ? workspaceVaultPath : undefined,
+  });
+  await manager.init();
+
+  contextGen = new ContextGenerator(manager);
+  sessionTracker = new SessionTracker(manager);
   sessionTracker.activate();
   ctx.subscriptions.push(sessionTracker);
 
   // Tree views
-  const vaultTree = new VaultTreeProvider(store);
-  const taskTree = new TaskTreeProvider(store);
-  const sessionTree = new SessionTreeProvider(store);
+  const vaultTree = new VaultTreeProvider(manager);
+  const taskTree = new TaskTreeProvider(manager);
+  const sessionTree = new SessionTreeProvider(manager);
 
   ctx.subscriptions.push(
-    vscode.window.registerTreeDataProvider('knowledgeVault.vault', vaultTree),
-    vscode.window.registerTreeDataProvider('knowledgeVault.tasks', taskTree),
-    vscode.window.registerTreeDataProvider('knowledgeVault.sessions', sessionTree),
+    vscode.window.registerTreeDataProvider('kbvault.vault', vaultTree),
+    vscode.window.registerTreeDataProvider('kbvault.tasks', taskTree),
+    vscode.window.registerTreeDataProvider('kbvault.sessions', sessionTree),
   );
 
+  const refreshAll = () => {
+    vaultTree.refresh();
+    taskTree.refresh();
+    sessionTree.refresh();
+  };
+
+  // --- Helper: resolve scope for new items ---
+  async function pickScope(defaultScope: VaultScope): Promise<{ scope: VaultScope; rootDir: string } | undefined> {
+    // If no workspace vault, always global
+    if (!manager.workspaceStore) {
+      return { scope: 'global', rootDir: manager.globalPath };
+    }
+
+    const items = [
+      { label: '🌐 Global', description: 'Available in all workspaces', value: 'global' as VaultScope },
+      { label: '📁 Workspace', description: 'Only for this project', value: 'workspace' as VaultScope },
+    ];
+
+    // Put default first
+    if (defaultScope === 'workspace') items.reverse();
+
+    const picked = await vscode.window.showQuickPick(items, {
+      placeHolder: 'Where should this be saved?',
+    });
+    if (!picked) return undefined;
+
+    const rootDir = manager.rootDirFor(picked.value);
+    if (!rootDir) return undefined;
+    return { scope: picked.value, rootDir };
+  }
+
   // --- Commands ---
-
   ctx.subscriptions.push(
-    vscode.commands.registerCommand('knowledgeVault.refresh', () => {
-      vaultTree.refresh();
-      taskTree.refresh();
-      sessionTree.refresh();
-    }),
+    // Refresh
+    vscode.commands.registerCommand('kbvault.refresh', refreshAll),
 
-    vscode.commands.registerCommand('knowledgeVault.openVault', async () => {
+    // Open / change global vault
+    vscode.commands.registerCommand('kbvault.openVault', async () => {
       const uris = await vscode.window.showOpenDialog({
         canSelectFolders: true,
         canSelectFiles: false,
-        openLabel: 'Select Vault Folder',
+        openLabel: 'Select Global Vault Folder',
       });
       if (!uris?.[0]) return;
 
       const newPath = uris[0].fsPath;
-      await config.update('vaultPath', newPath, vscode.ConfigurationTarget.Global);
-      store = new VaultStore(newPath);
-      await store.init();
-      contextGen = new ContextGenerator(store);
+      await config.update('globalPath', newPath, vscode.ConfigurationTarget.Global);
 
-      vaultTree.refresh();
-      taskTree.refresh();
-      vscode.window.showInformationMessage(`Vault set to: ${newPath}`);
+      manager = new VaultManager({
+        globalPath: newPath,
+        workspacePath: manager.workspacePath,
+      });
+      await manager.init();
+      contextGen = new ContextGenerator(manager);
+
+      refreshAll();
+      vscode.window.showInformationMessage(`Global vault set to: ${newPath}`);
     }),
 
-    vscode.commands.registerCommand('knowledgeVault.newNote', async () => {
+    // Init workspace vault
+    vscode.commands.registerCommand('kbvault.initWorkspace', async () => {
+      if (!workspaceFolder) {
+        vscode.window.showWarningMessage('Open a workspace folder first.');
+        return;
+      }
+      if (manager.workspaceStore) {
+        vscode.window.showInformationMessage('Workspace vault already exists.');
+        return;
+      }
+
+      const wPath = path.join(workspaceFolder.uri.fsPath, '.kbvault');
+      await manager.initWorkspace(wPath);
+      refreshAll();
+      vscode.window.showInformationMessage(`Workspace vault created at: ${wPath}`);
+    }),
+
+    // New Note
+    vscode.commands.registerCommand('kbvault.newNote', async () => {
       const title = await vscode.window.showInputBox({
         prompt: 'Note title',
         placeHolder: 'My new note',
       });
       if (!title) return;
 
-      const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-      const filePath = path.join(store.rootDir, 'reference', `${slug}.md`);
+      const defaultScope = config.get<string>('newNoteDefaultScope') === 'workspace' ? 'workspace' : 'global';
+      const target = await pickScope(defaultScope as VaultScope);
+      if (!target) return;
 
-      await store.writeNote(filePath, {
+      const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      const filePath = path.join(target.rootDir, 'reference', `${slug}.md`);
+
+      await manager.writeNote(filePath, {
         title,
         type: 'note',
         created: new Date().toISOString(),
@@ -84,13 +160,14 @@ export async function activate(ctx: vscode.ExtensionContext) {
       }, `\n# ${title}\n\n`);
 
       await sessionTracker.log({ action: 'create', file: filePath });
-      vaultTree.refresh();
+      refreshAll();
 
       const doc = await vscode.workspace.openTextDocument(filePath);
       await vscode.window.showTextDocument(doc);
     }),
 
-    vscode.commands.registerCommand('knowledgeVault.newTask', async () => {
+    // New Task
+    vscode.commands.registerCommand('kbvault.newTask', async () => {
       const title = await vscode.window.showInputBox({
         prompt: 'Task description',
         placeHolder: 'What needs to be done?',
@@ -108,10 +185,19 @@ export async function activate(ctx: vscode.ExtensionContext) {
         placeHolder: 'Leave empty for no project',
       });
 
-      const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-      const filePath = path.join(store.rootDir, 'inbox', `${slug}.md`);
+      const defaultScope = config.get<string>('newTaskDefaultScope') === 'global' ? 'global' : 'workspace';
+      const target = await pickScope(defaultScope as VaultScope);
+      if (!target) return;
 
-      await store.writeNote(filePath, {
+      // If workspace vault doesn't exist and user picked workspace, create it
+      if (target.scope === 'workspace' && !manager.workspaceStore && workspaceFolder) {
+        await manager.initWorkspace(path.join(workspaceFolder.uri.fsPath, '.kbvault'));
+      }
+
+      const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      const filePath = path.join(target.rootDir, 'inbox', `${slug}.md`);
+
+      await manager.writeNote(filePath, {
         title,
         type: 'task',
         status: 'inbox',
@@ -122,19 +208,18 @@ export async function activate(ctx: vscode.ExtensionContext) {
       }, `\n${title}\n\n## Notes\n\n`);
 
       await sessionTracker.log({ action: 'create', file: filePath });
-      vaultTree.refresh();
-      taskTree.refresh();
+      refreshAll();
 
       const doc = await vscode.workspace.openTextDocument(filePath);
       await vscode.window.showTextDocument(doc);
     }),
 
-    vscode.commands.registerCommand('knowledgeVault.setTaskStatus', async (item?: unknown) => {
-      // If called from context menu, item is a tree node; otherwise prompt for file
+    // Set Task Status (full status picker)
+    vscode.commands.registerCommand('kbvault.setTaskStatus', async () => {
+      const editor = vscode.window.activeTextEditor;
       let filePath: string | undefined;
 
-      const editor = vscode.window.activeTextEditor;
-      if (editor && editor.document.uri.fsPath.startsWith(store.rootDir)) {
+      if (editor && manager.isVaultFile(editor.document.uri.fsPath)) {
         filePath = editor.document.uri.fsPath;
       }
 
@@ -143,7 +228,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
         return;
       }
 
-      const note = await store.readNote(filePath);
+      const note = await manager.readNote(filePath);
       const currentStatus = note.frontmatter.status ?? 'inbox';
 
       const statuses = Object.entries(GTD_LISTS).map(([key, label]) => ({
@@ -157,7 +242,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
       if (!picked) return;
 
       note.frontmatter.status = picked.value;
-      await store.writeNote(filePath, note.frontmatter, note.body);
+      await manager.writeNote(filePath, note.frontmatter, note.body);
 
       await sessionTracker.log({
         action: 'status_change',
@@ -165,15 +250,77 @@ export async function activate(ctx: vscode.ExtensionContext) {
         detail: `${currentStatus} → ${picked.value}`,
       });
 
-      taskTree.refresh();
+      refreshAll();
       vscode.window.showInformationMessage(`Task moved to: ${GTD_LISTS[picked.value]}`);
     }),
 
-    vscode.commands.registerCommand('knowledgeVault.compileContext', async () => {
-      const allFiles = await store.queryNotes({});
+    // Mark Done (quick checkbox action)
+    vscode.commands.registerCommand('kbvault.markDone', async () => {
+      const editor = vscode.window.activeTextEditor;
+      let filePath: string | undefined;
+
+      if (editor && manager.isVaultFile(editor.document.uri.fsPath)) {
+        filePath = editor.document.uri.fsPath;
+      }
+
+      if (!filePath) {
+        vscode.window.showWarningMessage('Open a vault task file first.');
+        return;
+      }
+
+      const note = await manager.readNote(filePath);
+      const previousStatus = note.frontmatter.status ?? 'inbox';
+
+      note.frontmatter.status = 'done';
+      await manager.writeNote(filePath, note.frontmatter, note.body);
+
+      await sessionTracker.log({
+        action: 'status_change',
+        file: filePath,
+        detail: `${previousStatus} → done`,
+      });
+
+      refreshAll();
+      vscode.window.showInformationMessage('Task marked done ✓');
+    }),
+
+    // Delete Note
+    vscode.commands.registerCommand('kbvault.deleteNote', async () => {
+      const editor = vscode.window.activeTextEditor;
+      let filePath: string | undefined;
+
+      if (editor && manager.isVaultFile(editor.document.uri.fsPath)) {
+        filePath = editor.document.uri.fsPath;
+      }
+
+      if (!filePath) {
+        vscode.window.showWarningMessage('Open a vault file first.');
+        return;
+      }
+
+      const confirm = await vscode.window.showWarningMessage(
+        `Delete ${path.basename(filePath)}?`,
+        { modal: true },
+        'Delete'
+      );
+
+      if (confirm === 'Delete') {
+        await manager.delete(filePath);
+        refreshAll();
+        vscode.window.showInformationMessage('Note deleted.');
+      }
+    }),
+
+    // Compile Context for AI
+    vscode.commands.registerCommand('kbvault.compileContext', async () => {
+      const allFiles = await manager.queryNotes({});
       const items = allFiles.map(n => ({
         label: n.frontmatter.title ?? n.relativePath,
-        description: [n.frontmatter.type, n.frontmatter.status].filter(Boolean).join(' | '),
+        description: [
+          n.source === 'workspace' ? '📁' : '🌐',
+          n.frontmatter.type,
+          n.frontmatter.status,
+        ].filter(Boolean).join(' | '),
         detail: n.relativePath,
         path: n.path,
         picked: n.frontmatter.status === 'active' || n.frontmatter.status === 'next',
@@ -199,7 +346,6 @@ export async function activate(ctx: vscode.ExtensionContext) {
         { format: format.value }
       );
 
-      // Open in a new untitled document
       const doc = await vscode.workspace.openTextDocument({
         content: compiled,
         language: format.value === 'xml' ? 'xml' : 'markdown',
@@ -216,8 +362,8 @@ export async function activate(ctx: vscode.ExtensionContext) {
       );
     }),
 
-    vscode.commands.registerCommand('knowledgeVault.generateClaudeMd', async () => {
-      const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+    // Generate CLAUDE.md
+    vscode.commands.registerCommand('kbvault.generateClaudeMd', async () => {
       if (!workspaceFolder) {
         vscode.window.showWarningMessage('Open a workspace folder first.');
         return;
@@ -226,7 +372,6 @@ export async function activate(ctx: vscode.ExtensionContext) {
       const content = await contextGen.generateClaudeMd(workspaceFolder.uri.fsPath);
       const targetPath = path.join(workspaceFolder.uri.fsPath, 'CLAUDE.md');
 
-      // Show preview first
       const doc = await vscode.workspace.openTextDocument({
         content,
         language: 'markdown',
@@ -245,8 +390,8 @@ export async function activate(ctx: vscode.ExtensionContext) {
       }
     }),
 
-    vscode.commands.registerCommand('knowledgeVault.generateCopilotInstructions', async () => {
-      const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+    // Generate Copilot Instructions
+    vscode.commands.registerCommand('kbvault.generateCopilotInstructions', async () => {
       if (!workspaceFolder) {
         vscode.window.showWarningMessage('Open a workspace folder first.');
         return;
@@ -277,7 +422,8 @@ export async function activate(ctx: vscode.ExtensionContext) {
       }
     }),
 
-    vscode.commands.registerCommand('knowledgeVault.logActivity', async () => {
+    // Log Activity
+    vscode.commands.registerCommand('kbvault.logActivity', async () => {
       const detail = await vscode.window.showInputBox({
         prompt: 'What did you just do / decide / learn?',
         placeHolder: 'e.g., Decided to use Redis for caching instead of Memcached',
@@ -298,7 +444,39 @@ export async function activate(ctx: vscode.ExtensionContext) {
     }),
   );
 
-  vscode.window.showInformationMessage(`Knowledge Vault active: ${vaultPath}`);
+  // --- Staleness check on workspace open ---
+  if (config.get<boolean>('autoDetectStaleness') && workspaceFolder) {
+    const staleResults = await checkStaleness(manager, workspaceFolder.uri.fsPath);
+    const staleFiles = staleResults.filter(r => r.isStale);
+
+    if (staleFiles.length > 0) {
+      const missing = staleFiles.filter(r => r.aiFileMtime === null);
+      const outdated = staleFiles.filter(r => r.aiFileMtime !== null);
+
+      let message = 'KB Vault: ';
+      if (missing.length > 0) {
+        message += `${missing.map(r => r.file).join(', ')} can be generated from vault content. `;
+      }
+      if (outdated.length > 0) {
+        message += `${outdated.map(r => r.file).join(', ')} may be outdated.`;
+      }
+
+      const action = await vscode.window.showInformationMessage(
+        message.trim(),
+        'Regenerate CLAUDE.md',
+        'Regenerate Copilot',
+        'Dismiss'
+      );
+
+      if (action === 'Regenerate CLAUDE.md') {
+        await vscode.commands.executeCommand('kbvault.generateClaudeMd');
+      } else if (action === 'Regenerate Copilot') {
+        await vscode.commands.executeCommand('kbvault.generateCopilotInstructions');
+      }
+    }
+  }
+
+  vscode.window.showInformationMessage(`KB Vault active: ${globalPath}`);
 }
 
 export function deactivate() {}
