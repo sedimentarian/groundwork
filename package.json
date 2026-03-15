@@ -32,7 +32,7 @@
         {
           "id": "kb-vault",
           "title": "KB Vault",
-          "icon": "$(book)"
+          "icon": "./images/icon.svg"
         }
       ]
     },
