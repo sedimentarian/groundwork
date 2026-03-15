@@ -10,11 +10,15 @@ import { parseFrontmatter, serializeFrontmatter } from '../vault/store';
  */
 export class EditorPanelManager {
   private panels = new Map<string, vscode.WebviewPanel>();
+  private onDidSave: (() => void) | undefined;
 
   constructor(
     private manager: VaultManager,
-    private extensionUri: vscode.Uri
-  ) {}
+    private extensionUri: vscode.Uri,
+    onDidSave?: () => void
+  ) {
+    this.onDidSave = onDidSave;
+  }
 
   async openFile(filePath: string): Promise<void> {
     // If already open, focus it
@@ -67,6 +71,7 @@ export class EditorPanelManager {
           // Update the in-memory note reference
           Object.assign(note.frontmatter, frontmatter);
           note.body = msg.body;
+          this.onDidSave?.();
           break;
         }
         case 'statusChange': {
@@ -74,6 +79,7 @@ export class EditorPanelManager {
           note.frontmatter.modified = new Date().toISOString();
           await this.manager.writeNote(filePath, note.frontmatter, note.body);
           vscode.window.showInformationMessage(`Status → ${GTD_LISTS[msg.status as TaskStatus] ?? msg.status}`);
+          this.onDidSave?.();
           break;
         }
       }

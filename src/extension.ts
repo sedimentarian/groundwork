@@ -56,19 +56,20 @@ export async function activate(ctx: vscode.ExtensionContext) {
   const vaultTree = new VaultTreeProvider(manager);
   const taskTree = new TaskTreeProvider(manager);
   const sessionTree = new SessionTreeProvider(manager);
-  editorPanels = new EditorPanelManager(manager, ctx.extensionUri);
-
-  ctx.subscriptions.push(
-    vscode.window.registerTreeDataProvider('kbvault.vault', vaultTree),
-    vscode.window.registerTreeDataProvider('kbvault.tasks', taskTree),
-    vscode.window.registerTreeDataProvider('kbvault.sessions', sessionTree),
-  );
 
   const refreshAll = () => {
     vaultTree.refresh();
     taskTree.refresh();
     sessionTree.refresh();
   };
+
+  editorPanels = new EditorPanelManager(manager, ctx.extensionUri, refreshAll);
+
+  ctx.subscriptions.push(
+    vscode.window.registerTreeDataProvider('kbvault.vault', vaultTree),
+    vscode.window.registerTreeDataProvider('kbvault.tasks', taskTree),
+    vscode.window.registerTreeDataProvider('kbvault.sessions', sessionTree),
+  );
 
   // --- Helper: resolve scope for new items ---
   async function pickScope(defaultScope: VaultScope): Promise<{ scope: VaultScope; rootDir: string } | undefined> {
