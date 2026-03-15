@@ -14,18 +14,18 @@
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
-      { "command": "kbvault.openVault", "title": "KB Vault: Open Vault Folder" },
-      { "command": "kbvault.newNote", "title": "KB Vault: New Note", "icon": "$(add)" },
-      { "command": "kbvault.newTask", "title": "KB Vault: New Task", "icon": "$(add)" },
-      { "command": "kbvault.compileContext", "title": "KB Vault: Compile Context for AI", "icon": "$(export)" },
-      { "command": "kbvault.generateClaudeMd", "title": "KB Vault: Generate CLAUDE.md" },
-      { "command": "kbvault.generateCopilotInstructions", "title": "KB Vault: Generate Copilot Instructions" },
-      { "command": "kbvault.logActivity", "title": "KB Vault: Log Activity", "icon": "$(note)" },
-      { "command": "kbvault.refresh", "title": "KB Vault: Refresh", "icon": "$(refresh)" },
-      { "command": "kbvault.setTaskStatus", "title": "KB Vault: Set Task Status", "icon": "$(arrow-swap)" },
-      { "command": "kbvault.deleteNote", "title": "KB Vault: Delete Note", "icon": "$(trash)" },
-      { "command": "kbvault.markDone", "title": "KB Vault: Mark Done", "icon": "$(check)" },
-      { "command": "kbvault.initWorkspace", "title": "KB Vault: Initialize Workspace Vault", "icon": "$(folder-add)" }
+      { "command": "kbvault.openVault",                "title": "KB Vault: Open Vault Folder",               "shortTitle": "Open Vault" },
+      { "command": "kbvault.newNote",                  "title": "KB Vault: New Note",                        "shortTitle": "New Note",                  "icon": "$(add)" },
+      { "command": "kbvault.newTask",                  "title": "KB Vault: New Task",                        "shortTitle": "New Task",                  "icon": "$(add)" },
+      { "command": "kbvault.compileContext",            "title": "KB Vault: Compile Context for AI",          "shortTitle": "Compile Context",           "icon": "$(export)" },
+      { "command": "kbvault.generateClaudeMd",         "title": "KB Vault: Generate CLAUDE.md",              "shortTitle": "Generate CLAUDE.md" },
+      { "command": "kbvault.generateCopilotInstructions", "title": "KB Vault: Generate Copilot Instructions","shortTitle": "Generate Copilot Instructions" },
+      { "command": "kbvault.logActivity",              "title": "KB Vault: Log Activity",                    "shortTitle": "Log Activity",              "icon": "$(note)" },
+      { "command": "kbvault.refresh",                  "title": "KB Vault: Refresh",                         "shortTitle": "Refresh",                   "icon": "$(refresh)" },
+      { "command": "kbvault.setTaskStatus",            "title": "KB Vault: Set Task Status",                 "shortTitle": "Set Status",                "icon": "$(arrow-swap)" },
+      { "command": "kbvault.deleteNote",               "title": "KB Vault: Delete Note",                     "shortTitle": "Delete",                    "icon": "$(trash)" },
+      { "command": "kbvault.markDone",                 "title": "KB Vault: Mark Done",                       "shortTitle": "Mark Done",                 "icon": "$(check)" },
+      { "command": "kbvault.initWorkspace",            "title": "KB Vault: Initialize Workspace Vault",      "shortTitle": "Init Workspace Vault",      "icon": "$(folder-add)" }
     ],
     "viewsContainers": {
       "activitybar": [
