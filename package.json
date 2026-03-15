@@ -1,0 +1,131 @@
+{
+  "name": "knowledge-ext",
+  "displayName": "Knowledge Vault",
+  "description": "GTD-powered knowledge and context management for AI coding assistants",
+  "version": "0.1.0",
+  "publisher": "lwbailey",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "knowledgeVault.openVault",
+        "title": "Knowledge Vault: Open Vault Folder"
+      },
+      {
+        "command": "knowledgeVault.newNote",
+        "title": "Knowledge Vault: New Note"
+      },
+      {
+        "command": "knowledgeVault.newTask",
+        "title": "Knowledge Vault: New Task"
+      },
+      {
+        "command": "knowledgeVault.compileContext",
+        "title": "Knowledge Vault: Compile Context for AI"
+      },
+      {
+        "command": "knowledgeVault.generateClaudeMd",
+        "title": "Knowledge Vault: Generate CLAUDE.md"
+      },
+      {
+        "command": "knowledgeVault.generateCopilotInstructions",
+        "title": "Knowledge Vault: Generate Copilot Instructions"
+      },
+      {
+        "command": "knowledgeVault.logActivity",
+        "title": "Knowledge Vault: Log Activity"
+      },
+      {
+        "command": "knowledgeVault.refresh",
+        "title": "Knowledge Vault: Refresh",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "knowledgeVault.setTaskStatus",
+        "title": "Knowledge Vault: Set Task Status"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "knowledge-vault",
+          "title": "Knowledge Vault",
+          "icon": "$(book)"
+        }
+      ]
+    },
+    "views": {
+      "knowledge-vault": [
+        {
+          "id": "knowledgeVault.tasks",
+          "name": "Tasks"
+        },
+        {
+          "id": "knowledgeVault.vault",
+          "name": "Vault"
+        },
+        {
+          "id": "knowledgeVault.sessions",
+          "name": "Recent Activity"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "knowledgeVault.refresh",
+          "when": "view =~ /knowledgeVault/",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "knowledgeVault.setTaskStatus",
+          "when": "view == knowledgeVault.tasks"
+        },
+        {
+          "command": "knowledgeVault.compileContext",
+          "when": "view == knowledgeVault.vault || view == knowledgeVault.tasks"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Knowledge Vault",
+      "properties": {
+        "knowledgeVault.vaultPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the knowledge vault directory. Defaults to ~/.knowledge-vault"
+        },
+        "knowledgeVault.gtd.contexts": {
+          "type": "array",
+          "default": ["@computer", "@phone", "@office", "@home", "@errands", "@anywhere"],
+          "description": "GTD contexts for task categorization"
+        },
+        "knowledgeVault.context.maxTokenEstimate": {
+          "type": "number",
+          "default": 4000,
+          "description": "Approximate max tokens when compiling AI context"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.3"
+  }
+}
