@@ -15,17 +15,17 @@
   "contributes": {
     "commands": [
       { "command": "kbvault.openVault", "title": "KB Vault: Open Vault Folder" },
-      { "command": "kbvault.newNote", "title": "KB Vault: New Note" },
-      { "command": "kbvault.newTask", "title": "KB Vault: New Task" },
-      { "command": "kbvault.compileContext", "title": "KB Vault: Compile Context for AI" },
+      { "command": "kbvault.newNote", "title": "KB Vault: New Note", "icon": "$(add)" },
+      { "command": "kbvault.newTask", "title": "KB Vault: New Task", "icon": "$(add)" },
+      { "command": "kbvault.compileContext", "title": "KB Vault: Compile Context for AI", "icon": "$(export)" },
       { "command": "kbvault.generateClaudeMd", "title": "KB Vault: Generate CLAUDE.md" },
       { "command": "kbvault.generateCopilotInstructions", "title": "KB Vault: Generate Copilot Instructions" },
-      { "command": "kbvault.logActivity", "title": "KB Vault: Log Activity" },
+      { "command": "kbvault.logActivity", "title": "KB Vault: Log Activity", "icon": "$(note)" },
       { "command": "kbvault.refresh", "title": "KB Vault: Refresh", "icon": "$(refresh)" },
-      { "command": "kbvault.setTaskStatus", "title": "KB Vault: Set Task Status" },
-      { "command": "kbvault.deleteNote", "title": "KB Vault: Delete Note" },
+      { "command": "kbvault.setTaskStatus", "title": "KB Vault: Set Task Status", "icon": "$(arrow-swap)" },
+      { "command": "kbvault.deleteNote", "title": "KB Vault: Delete Note", "icon": "$(trash)" },
       { "command": "kbvault.markDone", "title": "KB Vault: Mark Done", "icon": "$(check)" },
-      { "command": "kbvault.initWorkspace", "title": "KB Vault: Initialize Workspace Vault" }
+      { "command": "kbvault.initWorkspace", "title": "KB Vault: Initialize Workspace Vault", "icon": "$(folder-add)" }
     ],
     "viewsContainers": {
       "activitybar": [
@@ -46,27 +46,56 @@
     "menus": {
       "view/title": [
         {
+          "command": "kbvault.newTask",
+          "when": "view == kbvault.tasks",
+          "group": "navigation@1"
+        },
+        {
+          "command": "kbvault.newNote",
+          "when": "view == kbvault.vault",
+          "group": "navigation@1"
+        },
+        {
+          "command": "kbvault.initWorkspace",
+          "when": "view == kbvault.vault",
+          "group": "navigation@2"
+        },
+        {
+          "command": "kbvault.compileContext",
+          "when": "view == kbvault.tasks",
+          "group": "navigation@2"
+        },
+        {
+          "command": "kbvault.logActivity",
+          "when": "view == kbvault.sessions",
+          "group": "navigation@1"
+        },
+        {
           "command": "kbvault.refresh",
           "when": "view =~ /kbvault/",
-          "group": "navigation"
+          "group": "navigation@9"
         }
       ],
       "view/item/context": [
         {
           "command": "kbvault.setTaskStatus",
-          "when": "view == kbvault.tasks && viewItem == task-item"
+          "when": "view == kbvault.tasks && viewItem == task-item",
+          "group": "1_actions@1"
         },
         {
           "command": "kbvault.markDone",
-          "when": "view == kbvault.tasks && viewItem == task-item"
-        },
-        {
-          "command": "kbvault.compileContext",
-          "when": "view == kbvault.vault || view == kbvault.tasks"
+          "when": "view == kbvault.tasks && viewItem == task-item",
+          "group": "1_actions@2"
         },
         {
           "command": "kbvault.deleteNote",
-          "when": "viewItem == vault-file || viewItem == task-item"
+          "when": "viewItem == vault-file || viewItem == task-item",
+          "group": "2_delete@1"
+        },
+        {
+          "command": "kbvault.compileContext",
+          "when": "viewItem == vault-file || viewItem == task-item",
+          "group": "1_actions@3"
         }
       ]
     },
