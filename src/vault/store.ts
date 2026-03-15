@@ -1,9 +1,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { VaultFile, ParsedNote, NoteFrontmatter, SessionEntry } from './types';
+import { VaultFile, ParsedNote, NoteFrontmatter, SessionEntry, VaultScope } from './types';
 
 export class VaultStore {
-  constructor(public rootDir: string) {}
+  constructor(public rootDir: string, public readonly scope: VaultScope = 'global') {}
 
   /** Ensure vault directory and default structure exist */
   async init(): Promise<void> {
@@ -40,6 +40,7 @@ export class VaultStore {
           name: entry.name,
           isDirectory: true,
           children,
+          source: this.scope,
         });
       } else if (entry.name.endsWith('.md')) {
         results.push({
@@ -47,6 +48,7 @@ export class VaultStore {
           relativePath,
           name: entry.name,
           isDirectory: false,
+          source: this.scope,
         });
       }
     }
@@ -71,6 +73,7 @@ export class VaultStore {
       frontmatter,
       body,
       raw,
+      source: this.scope,
     };
   }
 
@@ -177,7 +180,7 @@ export class VaultStore {
 }
 
 /** Parse YAML-like frontmatter from markdown */
-function parseFrontmatter(raw: string): { frontmatter: NoteFrontmatter; body: string } {
+export function parseFrontmatter(raw: string): { frontmatter: NoteFrontmatter; body: string } {
   const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/);
   if (!match) {
     return { frontmatter: {}, body: raw };
@@ -205,7 +208,7 @@ function parseFrontmatter(raw: string): { frontmatter: NoteFrontmatter; body: st
 }
 
 /** Serialize frontmatter back to YAML */
-function serializeFrontmatter(fm: NoteFrontmatter): string {
+export function serializeFrontmatter(fm: NoteFrontmatter): string {
   const lines: string[] = ['---'];
 
   for (const [key, value] of Object.entries(fm)) {
