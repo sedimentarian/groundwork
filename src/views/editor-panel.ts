@@ -204,12 +204,18 @@ export class EditorPanelManager {
     }
     .EasyMDEContainer .editor-toolbar button {
       color: var(--fg) !important;
-      border: none !important;
+      border: 1px solid transparent !important;
       background: transparent !important;
+      font-size: 12px !important;
+      font-weight: 600;
+      min-width: 28px;
+      height: 28px;
+      padding: 0 5px;
     }
     .EasyMDEContainer .editor-toolbar button:hover,
     .EasyMDEContainer .editor-toolbar button.active {
       background: var(--vscode-toolbar-hoverBackground, rgba(255,255,255,0.1)) !important;
+      border-color: var(--border) !important;
       border-radius: 3px;
     }
     .EasyMDEContainer .editor-toolbar i.separator {
@@ -325,26 +331,36 @@ export class EditorPanelManager {
     statusTimer = setTimeout(() => el.classList.remove('show'), 3000);
   }
 
-  // Initialize EasyMDE
+  // Initialize EasyMDE — use custom toolbar with Unicode so Font Awesome isn't needed
   const editor = new EasyMDE({
     element: document.getElementById('md-editor'),
-    initialValue: '',
     autofocus: true,
     spellChecker: false,
-    status: ['lines', 'words', 'cursor'],
+    status: ['lines', 'words'],
     toolbar: [
-      'bold', 'italic', 'strikethrough', '|',
-      'heading-1', 'heading-2', 'heading-3', '|',
-      'unordered-list', 'ordered-list', 'checklist', '|',
-      'quote', 'code', '|',
-      'link', 'image', 'table', 'horizontal-rule', '|',
-      'preview', 'side-by-side', '|',
-      'guide'
+      { name: 'bold',           action: EasyMDE.toggleBold,          className: '', title: 'Bold',           text: '𝐁' },
+      { name: 'italic',         action: EasyMDE.toggleItalic,        className: '', title: 'Italic',         text: '𝑰' },
+      { name: 'strikethrough',  action: EasyMDE.toggleStrikethrough, className: '', title: 'Strikethrough',  text: 'S̶' },
+      '|',
+      { name: 'heading-1',      action: EasyMDE.toggleHeading1,      className: '', title: 'Heading 1',      text: 'H1' },
+      { name: 'heading-2',      action: EasyMDE.toggleHeading2,      className: '', title: 'Heading 2',      text: 'H2' },
+      { name: 'heading-3',      action: EasyMDE.toggleHeading3,      className: '', title: 'Heading 3',      text: 'H3' },
+      '|',
+      { name: 'unordered-list', action: EasyMDE.toggleUnorderedList, className: '', title: 'Bullet List',    text: '• —' },
+      { name: 'ordered-list',   action: EasyMDE.toggleOrderedList,   className: '', title: 'Numbered List',  text: '1.' },
+      { name: 'checklist',      action: EasyMDE.toggleTaskList,      className: '', title: 'Checklist',      text: '☑' },
+      '|',
+      { name: 'quote',          action: EasyMDE.toggleBlockquote,    className: '', title: 'Quote',          text: '❝' },
+      { name: 'code',           action: EasyMDE.toggleCodeBlock,     className: '', title: 'Code Block',     text: '{ }' },
+      '|',
+      { name: 'link',           action: EasyMDE.drawLink,            className: '', title: 'Link',           text: '🔗' },
+      { name: 'table',          action: EasyMDE.drawTable,           className: '', title: 'Table',          text: '⊞' },
+      { name: 'hr',             action: EasyMDE.drawHorizontalRule,  className: '', title: 'Horizontal Rule', text: '—' },
+      '|',
+      { name: 'preview',        action: EasyMDE.togglePreview,       className: 'no-disable', title: 'Preview',  text: '👁' },
+      { name: 'side-by-side',   action: EasyMDE.toggleSideBySide,   className: 'no-disable', title: 'Side-by-Side', text: '⧉' },
+      { name: 'fullscreen',     action: EasyMDE.toggleFullScreen,    className: 'no-disable', title: 'Fullscreen',   text: '⤢' },
     ],
-    renderingConfig: {
-      codeSyntaxHighlighting: false,
-    },
-    previewClass: ['editor-preview'],
   });
 
   function gatherFrontmatter() {
