@@ -3,10 +3,6 @@ import * as path from 'path';
 import { VaultManager } from '../vault/manager';
 import { NoteFrontmatter, TaskStatus, GTD_LISTS } from '../vault/types';
 
-/**
- * Manages WYSIWYG editor webview panels for vault notes.
- * Uses EasyMDE (self-contained, no external deps) for markdown editing.
- */
 export class EditorPanelManager {
   private panels = new Map<string, vscode.WebviewPanel>();
   private onDidSave: (() => void) | undefined;
@@ -21,10 +17,7 @@ export class EditorPanelManager {
 
   async openFile(filePath: string): Promise<void> {
     const existing = this.panels.get(filePath);
-    if (existing) {
-      existing.reveal();
-      return;
-    }
+    if (existing) { existing.reveal(); return; }
 
     const note = await this.manager.readNote(filePath);
     const fileName = path.basename(filePath, '.md');
@@ -37,56 +30,49 @@ export class EditorPanelManager {
         enableScripts: true,
         retainContextWhenHidden: true,
         localResourceRoots: [
-          vscode.Uri.joinPath(this.extensionUri, 'node_modules', 'easymde', 'dist'),
+          vscode.Uri.joinPath(this.extensionUri, 'node_modules', 'marked', 'lib'),
+          vscode.Uri.joinPath(this.extensionUri, 'node_modules', 'turndown', 'lib'),
         ],
       }
     );
 
     this.panels.set(filePath, panel);
 
-    const editorJsUri = panel.webview.asWebviewUri(
-      vscode.Uri.joinPath(this.extensionUri, 'node_modules', 'easymde', 'dist', 'easymde.min.js')
+    const markedUri = panel.webview.asWebviewUri(
+      vscode.Uri.joinPath(this.extensionUri, 'node_modules', 'marked', 'lib', 'marked.umd.js')
     );
-    const editorCssUri = panel.webview.asWebviewUri(
-      vscode.Uri.joinPath(this.extensionUri, 'node_modules', 'easymde', 'dist', 'easymde.min.css')
+    const turndownUri = panel.webview.asWebviewUri(
+      vscode.Uri.joinPath(this.extensionUri, 'node_modules', 'turndown', 'lib', 'turndown.umd.js')
     );
 
-    panel.webview.html = this.getHtml(panel.webview, editorJsUri, editorCssUri, note.frontmatter, note.body);
+    panel.webview.html = this.getHtml(panel.webview, markedUri, turndownUri, note.frontmatter, note.body);
 
-    // Handle messages from webview
     panel.webview.onDidReceiveMessage(async (msg) => {
-      switch (msg.type) {
-        case 'save': {
-          const frontmatter: NoteFrontmatter = { ...note.frontmatter, ...msg.frontmatter };
-          frontmatter.modified = new Date().toISOString();
-          await this.manager.writeNote(filePath, frontmatter, msg.body);
-          if (frontmatter.title) panel.title = frontmatter.title;
-          vscode.window.showInformationMessage('Note saved.');
-          Object.assign(note.frontmatter, frontmatter);
-          note.body = msg.body;
-          this.onDidSave?.();
-          break;
-        }
-        case 'statusChange': {
-          note.frontmatter.status = msg.status;
-          note.frontmatter.modified = new Date().toISOString();
-          await this.manager.writeNote(filePath, note.frontmatter, note.body);
-          vscode.window.showInformationMessage(`Status → ${GTD_LISTS[msg.status as TaskStatus] ?? msg.status}`);
-          this.onDidSave?.();
-          break;
-        }
+      if (msg.type === 'save') {
+        const frontmatter: NoteFrontmatter = { ...note.frontmatter, ...msg.frontmatter };
+        frontmatter.modified = new Date().toISOString();
+        await this.manager.writeNote(filePath, frontmatter, msg.body);
+        if (frontmatter.title) panel.title = frontmatter.title;
+        Object.assign(note.frontmatter, frontmatter);
+        note.body = msg.body;
+        this.onDidSave?.();
+      }
+      if (msg.type === 'statusChange') {
+        note.frontmatter.status = msg.status;
+        note.frontmatter.modified = new Date().toISOString();
+        await this.manager.writeNote(filePath, note.frontmatter, note.body);
+        vscode.window.showInformationMessage(`Status → ${GTD_LISTS[msg.status as TaskStatus] ?? msg.status}`);
+        this.onDidSave?.();
       }
     });
 
-    panel.onDidDispose(() => {
-      this.panels.delete(filePath);
-    });
+    panel.onDidDispose(() => this.panels.delete(filePath));
   }
 
   private getHtml(
     webview: vscode.Webview,
-    editorJsUri: vscode.Uri,
-    editorCssUri: vscode.Uri,
+    markedUri: vscode.Uri,
+    turndownUri: vscode.Uri,
     frontmatter: NoteFrontmatter,
     body: string
   ): string {
@@ -96,187 +82,187 @@ export class EditorPanelManager {
       .join('');
     const tagsValue = Array.isArray(frontmatter.tags) ? frontmatter.tags.join(', ') : '';
     const contextValue = Array.isArray(frontmatter.context) ? (frontmatter.context as string[]).join(', ') : '';
+    // Pass body as JSON so it survives all escaping in the script block
+    const bodyJson = JSON.stringify(body.trim());
 
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}' 'unsafe-eval'; font-src ${webview.cspSource} data:; img-src ${webview.cspSource} data: https:;">
-  <link href="${editorCssUri}" rel="stylesheet">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'; img-src ${webview.cspSource} data: https:;">
   <style>
     :root {
-      --bg: var(--vscode-editor-background);
-      --fg: var(--vscode-editor-foreground);
-      --input-bg: var(--vscode-input-background);
-      --input-border: var(--vscode-input-border);
-      --input-fg: var(--vscode-input-foreground);
-      --btn-bg: var(--vscode-button-background);
-      --btn-fg: var(--vscode-button-foreground);
-      --btn-hover: var(--vscode-button-hoverBackground);
-      --border: var(--vscode-panel-border);
+      --bg: var(--vscode-editor-background, #1e1e1e);
+      --fg: var(--vscode-editor-foreground, #d4d4d4);
+      --input-bg: var(--vscode-input-background, #2d2d2d);
+      --input-fg: var(--vscode-input-foreground, #cccccc);
+      --input-border: var(--vscode-input-border, #3c3c3c);
+      --btn-bg: var(--vscode-button-background, #0e639c);
+      --btn-fg: var(--vscode-button-foreground, #ffffff);
+      --btn-hover: var(--vscode-button-hoverBackground, #1177bb);
+      --border: var(--vscode-panel-border, #444);
+      --toolbar-hover: var(--vscode-toolbar-hoverBackground, rgba(255,255,255,0.1));
+      --accent: var(--vscode-textLink-foreground, #3794ff);
     }
-    * { box-sizing: border-box; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      margin: 0;
-      padding: 16px;
-      font-family: var(--vscode-font-family);
-      font-size: var(--vscode-font-size);
       background: var(--bg);
       color: var(--fg);
+      font-family: var(--vscode-font-family, -apple-system, sans-serif);
+      font-size: var(--vscode-font-size, 13px);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
     }
-    .frontmatter {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-      gap: 8px 16px;
-      padding: 12px;
-      margin-bottom: 12px;
-      border: 1px solid var(--border);
-      border-radius: 4px;
+
+    /* ── Top bar ── */
+    #topbar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      border-bottom: 1px solid var(--border);
       background: var(--input-bg);
+      flex-shrink: 0;
+    }
+    #topbar button {
+      padding: 3px 10px;
+      background: var(--btn-bg);
+      color: var(--btn-fg);
+      border: none;
+      border-radius: 3px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    #topbar button:hover { background: var(--btn-hover); }
+    #save-hint { font-size: 11px; opacity: 0.45; margin-left: 4px; }
+    #save-status { font-size: 11px; color: var(--accent); opacity: 0; transition: opacity 0.3s; margin-left: auto; }
+    #save-status.show { opacity: 1; }
+
+    /* ── Frontmatter card ── */
+    #fm-card {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 6px 14px;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      background: var(--input-bg);
+      flex-shrink: 0;
     }
     .field { display: flex; flex-direction: column; gap: 2px; }
-    .field label {
-      font-size: 11px;
-      text-transform: uppercase;
-      opacity: 0.7;
-      font-weight: 600;
-    }
+    .field label { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; opacity: 0.55; font-weight: 600; }
     .field input, .field select {
-      padding: 4px 8px;
       background: var(--bg);
       color: var(--input-fg);
       border: 1px solid var(--input-border);
       border-radius: 3px;
-      font-size: 13px;
+      padding: 3px 6px;
+      font-size: 12px;
+      font-family: inherit;
     }
-    .toolbar {
+    .field input:focus, .field select:focus { outline: 1px solid var(--accent); }
+
+    /* ── Editor toolbar ── */
+    #editor-toolbar {
       display: flex;
-      gap: 8px;
-      margin-bottom: 12px;
       align-items: center;
+      gap: 2px;
+      padding: 4px 8px;
+      border-bottom: 1px solid var(--border);
+      background: var(--input-bg);
+      flex-shrink: 0;
+      flex-wrap: wrap;
     }
-    .toolbar button {
-      padding: 6px 16px;
-      background: var(--btn-bg);
-      color: var(--btn-fg);
-      border: none;
-      border-radius: 4px;
+    #editor-toolbar button {
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: 3px;
+      color: var(--fg);
       cursor: pointer;
       font-size: 13px;
+      padding: 2px 6px;
+      min-width: 26px;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
-    .toolbar button:hover { background: var(--btn-hover); }
-    .toolbar .save-hint {
-      opacity: 0.5;
-      font-size: 12px;
-      margin-left: auto;
-    }
-    .status-msg {
-      font-size: 12px;
-      opacity: 0;
-      transition: opacity 0.3s;
-      color: var(--vscode-notificationsInfoIcon-foreground, #3794ff);
-    }
-    .status-msg.show { opacity: 1; }
+    #editor-toolbar button:hover { background: var(--toolbar-hover); border-color: var(--border); }
+    #editor-toolbar button[title] { position: relative; }
+    .tb-sep { width: 1px; height: 18px; background: var(--border); margin: 0 3px; }
 
-    /* EasyMDE theme overrides to match VSCode */
-    .EasyMDEContainer .CodeMirror {
-      background: var(--bg) !important;
-      color: var(--fg) !important;
-      border: 1px solid var(--border) !important;
-      border-radius: 0 0 4px 4px;
-      font-family: var(--vscode-editor-font-family, 'Menlo, Monaco, monospace');
-      font-size: var(--vscode-editor-font-size, 13px);
-      min-height: 350px;
+    /* ── WYSIWYG content area ── */
+    #editor {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px 28px;
+      outline: none;
+      line-height: 1.7;
+      font-size: 14px;
     }
-    .EasyMDEContainer .CodeMirror-cursor {
-      border-left-color: var(--fg) !important;
+    /* Rendered content styles */
+    #editor h1 { font-size: 2em; border-bottom: 1px solid var(--border); padding-bottom: .3em; margin: .67em 0 .5em; }
+    #editor h2 { font-size: 1.5em; border-bottom: 1px solid var(--border); padding-bottom: .2em; margin: .75em 0 .5em; }
+    #editor h3 { font-size: 1.25em; margin: .75em 0 .4em; }
+    #editor h4, #editor h5, #editor h6 { margin: .75em 0 .4em; }
+    #editor p { margin: .5em 0; }
+    #editor ul, #editor ol { padding-left: 1.5em; margin: .5em 0; }
+    #editor li { margin: .2em 0; }
+    #editor input[type=checkbox] { margin-right: 6px; }
+    #editor blockquote {
+      border-left: 3px solid var(--accent);
+      padding-left: 12px;
+      margin: .5em 0;
+      opacity: 0.75;
     }
-    .EasyMDEContainer .CodeMirror-selected {
-      background: var(--vscode-editor-selectionBackground, rgba(0,120,215,0.3)) !important;
-    }
-    .EasyMDEContainer .editor-toolbar {
-      background: var(--input-bg) !important;
-      border: 1px solid var(--border) !important;
-      border-bottom: none !important;
-      border-radius: 4px 4px 0 0;
-      opacity: 1 !important;
-    }
-    .EasyMDEContainer .editor-toolbar button {
-      color: var(--fg) !important;
-      border: 1px solid transparent !important;
-      background: transparent !important;
-      font-size: 12px !important;
-      font-weight: 600;
-      min-width: 28px;
-      height: 28px;
-      padding: 0 5px;
-    }
-    .EasyMDEContainer .editor-toolbar button:hover,
-    .EasyMDEContainer .editor-toolbar button.active {
-      background: var(--vscode-toolbar-hoverBackground, rgba(255,255,255,0.1)) !important;
-      border-color: var(--border) !important;
+    #editor code {
+      background: var(--input-bg);
+      border: 1px solid var(--border);
       border-radius: 3px;
+      padding: 1px 5px;
+      font-family: var(--vscode-editor-font-family, monospace);
+      font-size: .9em;
     }
-    .EasyMDEContainer .editor-toolbar i.separator {
-      border-left-color: var(--border) !important;
-    }
-    .EasyMDEContainer .editor-statusbar {
-      color: var(--fg) !important;
-      opacity: 0.5;
-      background: var(--input-bg) !important;
-      border-top: 1px solid var(--border) !important;
-    }
-    .EasyMDEContainer .editor-preview {
-      background: var(--bg) !important;
-      color: var(--fg) !important;
-    }
-    .EasyMDEContainer .editor-preview-side {
-      background: var(--bg) !important;
-      color: var(--fg) !important;
-      border-left: 1px solid var(--border) !important;
-    }
-    /* Rendered markdown styles in preview */
-    .editor-preview h1, .editor-preview h2, .editor-preview h3,
-    .editor-preview-side h1, .editor-preview-side h2, .editor-preview-side h3 {
-      color: var(--fg) !important;
-      border-bottom: 1px solid var(--border);
-      padding-bottom: 4px;
-    }
-    .editor-preview code, .editor-preview-side code {
-      background: var(--input-bg) !important;
-      color: var(--fg) !important;
-      padding: 2px 4px;
-      border-radius: 3px;
-    }
-    .editor-preview pre, .editor-preview-side pre {
-      background: var(--input-bg) !important;
-      border: 1px solid var(--border) !important;
+    #editor pre {
+      background: var(--input-bg);
+      border: 1px solid var(--border);
       border-radius: 4px;
-      padding: 12px !important;
+      padding: 12px;
+      overflow-x: auto;
+      margin: .5em 0;
     }
-    .editor-preview a, .editor-preview-side a {
-      color: var(--vscode-textLink-foreground, #3794ff) !important;
-    }
-    .editor-preview blockquote, .editor-preview-side blockquote {
-      border-left: 3px solid var(--border) !important;
-      color: var(--fg) !important;
-      opacity: 0.8;
+    #editor pre code { background: none; border: none; padding: 0; }
+    #editor a { color: var(--accent); }
+    #editor hr { border: none; border-top: 1px solid var(--border); margin: 1em 0; }
+    #editor table { border-collapse: collapse; margin: .5em 0; width: 100%; }
+    #editor th, #editor td { border: 1px solid var(--border); padding: 5px 10px; }
+    #editor th { background: var(--input-bg); font-weight: 600; }
+    /* Placeholder */
+    #editor:empty:before {
+      content: 'Start writing…';
+      opacity: 0.3;
+      pointer-events: none;
     }
   </style>
 </head>
 <body>
 
-<div class="toolbar">
-  <button id="save-btn">💾 Save</button>
-  <span class="status-msg" id="status-msg"></span>
-  <span class="save-hint">⌘S also works</span>
+<div id="topbar">
+  <button id="save-btn">Save</button>
+  <span id="save-hint">⌘S</span>
+  <span id="save-status">✓ Saved</span>
 </div>
 
-<div class="frontmatter">
+<div id="fm-card">
   <div class="field">
     <label>Title</label>
     <input id="fm-title" value="${escapeAttr(frontmatter.title ?? '')}" />
+  </div>
+  <div class="field">
+    <label>Status</label>
+    <select id="fm-status">${statusOptions}</select>
   </div>
   <div class="field">
     <label>Type</label>
@@ -287,10 +273,6 @@ export class EditorPanelManager {
     </select>
   </div>
   <div class="field">
-    <label>Status</label>
-    <select id="fm-status">${statusOptions}</select>
-  </div>
-  <div class="field">
     <label>Priority</label>
     <select id="fm-priority">
       <option value="low" ${frontmatter.priority === 'low' ? 'selected' : ''}>Low</option>
@@ -299,12 +281,12 @@ export class EditorPanelManager {
     </select>
   </div>
   <div class="field">
-    <label>Context</label>
-    <input id="fm-context" value="${escapeAttr(contextValue)}" placeholder="@computer, @phone" />
-  </div>
-  <div class="field">
     <label>Project</label>
     <input id="fm-project" value="${escapeAttr(frontmatter.project ?? '')}" />
+  </div>
+  <div class="field">
+    <label>Context</label>
+    <input id="fm-context" value="${escapeAttr(contextValue)}" placeholder="@home, @computer" />
   </div>
   <div class="field">
     <label>Tags</label>
@@ -316,123 +298,188 @@ export class EditorPanelManager {
   </div>
 </div>
 
-<textarea id="md-editor">${escapeHtml(body.trim())}</textarea>
+<div id="editor-toolbar">
+  <button data-cmd="bold"        title="Bold (⌘B)"><b>B</b></button>
+  <button data-cmd="italic"      title="Italic (⌘I)"><i>I</i></button>
+  <button data-cmd="strikeThrough" title="Strikethrough"><s>S</s></button>
+  <div class="tb-sep"></div>
+  <button data-heading="1"  title="Heading 1">H1</button>
+  <button data-heading="2"  title="Heading 2">H2</button>
+  <button data-heading="3"  title="Heading 3">H3</button>
+  <div class="tb-sep"></div>
+  <button data-cmd="insertUnorderedList" title="Bullet list">• —</button>
+  <button data-cmd="insertOrderedList"   title="Numbered list">1.</button>
+  <button data-task title="Task list (checklist)">☑</button>
+  <div class="tb-sep"></div>
+  <button data-cmd="formatBlock" data-val="blockquote" title="Quote">❝</button>
+  <button data-code title="Inline code">{ }</button>
+  <div class="tb-sep"></div>
+  <button data-link title="Insert link">🔗</button>
+  <button data-hr title="Horizontal rule">—</button>
+</div>
 
-<script nonce="${nonce}" src="${editorJsUri}"></script>
+<div id="editor" contenteditable="true" spellcheck="true"></div>
+
+<script nonce="${nonce}" src="${markedUri}"></script>
+<script nonce="${nonce}" src="${turndownUri}"></script>
 <script nonce="${nonce}">
+(function() {
   const vscode = acquireVsCodeApi();
-  let statusTimer;
+  const editorEl = document.getElementById('editor');
+  const saveStatus = document.getElementById('save-status');
+  let saveTimer;
 
-  function showStatus(msg) {
-    const el = document.getElementById('status-msg');
-    el.textContent = msg;
-    el.classList.add('show');
-    clearTimeout(statusTimer);
-    statusTimer = setTimeout(() => el.classList.remove('show'), 3000);
-  }
+  // ── Load initial content ──────────────────────────────────────────────────
+  const initialMarkdown = ${bodyJson};
+  editorEl.innerHTML = marked.parse(initialMarkdown || '');
 
-  // Initialize EasyMDE — use custom toolbar with Unicode so Font Awesome isn't needed
-  const editor = new EasyMDE({
-    element: document.getElementById('md-editor'),
-    autofocus: true,
-    spellChecker: false,
-    status: ['lines', 'words'],
-    toolbar: [
-      { name: 'bold',           action: EasyMDE.toggleBold,          className: '', title: 'Bold',           text: '𝐁' },
-      { name: 'italic',         action: EasyMDE.toggleItalic,        className: '', title: 'Italic',         text: '𝑰' },
-      { name: 'strikethrough',  action: EasyMDE.toggleStrikethrough, className: '', title: 'Strikethrough',  text: 'S̶' },
-      '|',
-      { name: 'heading-1',      action: EasyMDE.toggleHeading1,      className: '', title: 'Heading 1',      text: 'H1' },
-      { name: 'heading-2',      action: EasyMDE.toggleHeading2,      className: '', title: 'Heading 2',      text: 'H2' },
-      { name: 'heading-3',      action: EasyMDE.toggleHeading3,      className: '', title: 'Heading 3',      text: 'H3' },
-      '|',
-      { name: 'unordered-list', action: EasyMDE.toggleUnorderedList, className: '', title: 'Bullet List',    text: '• —' },
-      { name: 'ordered-list',   action: EasyMDE.toggleOrderedList,   className: '', title: 'Numbered List',  text: '1.' },
-      { name: 'checklist',      action: EasyMDE.toggleTaskList,      className: '', title: 'Checklist',      text: '☑' },
-      '|',
-      { name: 'quote',          action: EasyMDE.toggleBlockquote,    className: '', title: 'Quote',          text: '❝' },
-      { name: 'code',           action: EasyMDE.toggleCodeBlock,     className: '', title: 'Code Block',     text: '{ }' },
-      '|',
-      { name: 'link',           action: EasyMDE.drawLink,            className: '', title: 'Link',           text: '🔗' },
-      { name: 'table',          action: EasyMDE.drawTable,           className: '', title: 'Table',          text: '⊞' },
-      { name: 'hr',             action: EasyMDE.drawHorizontalRule,  className: '', title: 'Horizontal Rule', text: '—' },
-      '|',
-      { name: 'preview',        action: EasyMDE.togglePreview,       className: 'no-disable', title: 'Preview',  text: '👁' },
-      { name: 'side-by-side',   action: EasyMDE.toggleSideBySide,   className: 'no-disable', title: 'Side-by-Side', text: '⧉' },
-      { name: 'fullscreen',     action: EasyMDE.toggleFullScreen,    className: 'no-disable', title: 'Fullscreen',   text: '⤢' },
-    ],
+  // ── Turndown instance (HTML → Markdown) ──────────────────────────────────
+  const td = new TurndownService({
+    headingStyle: 'atx',
+    bulletListMarker: '-',
+    codeBlockStyle: 'fenced',
   });
+  // Preserve task list checkboxes
+  td.addRule('taskListItem', {
+    filter: function(node) {
+      return node.nodeName === 'LI' && node.querySelector('input[type=checkbox]');
+    },
+    replacement: function(content, node) {
+      const cb = node.querySelector('input[type=checkbox]');
+      const checked = cb && cb.checked ? '[x]' : '[ ]';
+      const text = content.replace(/^\s*\[.\]\s*/, '').trim();
+      return '- ' + checked + ' ' + text + '\\n';
+    }
+  });
+
+  // ── Save ─────────────────────────────────────────────────────────────────
+  function showSaved() {
+    saveStatus.classList.add('show');
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(function() { saveStatus.classList.remove('show'); }, 2500);
+  }
 
   function gatherFrontmatter() {
     return {
-      title: document.getElementById('fm-title').value,
-      type: document.getElementById('fm-type').value,
-      status: document.getElementById('fm-status').value,
+      title:    document.getElementById('fm-title').value,
+      type:     document.getElementById('fm-type').value,
+      status:   document.getElementById('fm-status').value,
       priority: document.getElementById('fm-priority').value,
-      context: document.getElementById('fm-context').value
-        .split(',').map(function(s) { return s.trim(); }).filter(Boolean),
-      project: document.getElementById('fm-project').value || undefined,
-      tags: document.getElementById('fm-tags').value
-        .split(',').map(function(s) { return s.trim(); }).filter(Boolean),
-      due: document.getElementById('fm-due').value || undefined,
+      project:  document.getElementById('fm-project').value || undefined,
+      context:  document.getElementById('fm-context').value.split(',').map(function(s){ return s.trim(); }).filter(Boolean),
+      tags:     document.getElementById('fm-tags').value.split(',').map(function(s){ return s.trim(); }).filter(Boolean),
+      due:      document.getElementById('fm-due').value || undefined,
     };
   }
 
-  function save() {
-    vscode.postMessage({
-      type: 'save',
-      frontmatter: gatherFrontmatter(),
-      body: editor.value(),
-    });
-    showStatus('✓ Saved');
+  function doSave() {
+    const markdown = td.turndown(editorEl.innerHTML);
+    vscode.postMessage({ type: 'save', frontmatter: gatherFrontmatter(), body: markdown });
+    showSaved();
   }
 
-  function statusChanged() {
-    const status = document.getElementById('fm-status').value;
-    vscode.postMessage({
-      type: 'statusChange',
-      status: status,
-    });
-    showStatus('Status updated');
-  }
+  document.getElementById('save-btn').addEventListener('click', doSave);
 
-  // Wire save button — addEventListener avoids CSP inline-handler restriction
-  document.getElementById('save-btn').addEventListener('click', save);
+  document.getElementById('fm-status').addEventListener('change', function() {
+    vscode.postMessage({ type: 'statusChange', status: this.value });
+    showSaved();
+  });
 
-  // Status dropdown — immediate write on change
-  document.getElementById('fm-status').addEventListener('change', statusChanged);
-
-  // Ctrl/Cmd+S to save
   document.addEventListener('keydown', function(e) {
     if ((e.metaKey || e.ctrlKey) && e.key === 's') {
       e.preventDefault();
-      save();
+      doSave();
+    }
+    if ((e.metaKey || e.ctrlKey) && e.key === 'b') {
+      e.preventDefault();
+      document.execCommand('bold');
+    }
+    if ((e.metaKey || e.ctrlKey) && e.key === 'i') {
+      e.preventDefault();
+      document.execCommand('italic');
     }
   });
-</script>
 
+  // ── Toolbar ──────────────────────────────────────────────────────────────
+  document.getElementById('editor-toolbar').addEventListener('click', function(e) {
+    var btn = e.target.closest('button');
+    if (!btn) return;
+
+    editorEl.focus();
+
+    if (btn.dataset.cmd) {
+      var val = btn.dataset.val || null;
+      document.execCommand(btn.dataset.cmd, false, val);
+      return;
+    }
+
+    if (btn.dataset.heading) {
+      document.execCommand('formatBlock', false, 'h' + btn.dataset.heading);
+      return;
+    }
+
+    if (btn.hasAttribute('data-task')) {
+      var sel = window.getSelection();
+      if (sel && sel.rangeCount > 0) {
+        var range = sel.getRangeAt(0);
+        var li = document.createElement('li');
+        var cb = document.createElement('input');
+        cb.type = 'checkbox';
+        var span = document.createElement('span');
+        span.textContent = ' ';
+        li.appendChild(cb);
+        li.appendChild(span);
+        var ul = document.createElement('ul');
+        ul.appendChild(li);
+        range.insertNode(ul);
+        // Move cursor to span
+        var r = document.createRange();
+        r.setStart(span, 1);
+        r.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(r);
+      }
+      return;
+    }
+
+    if (btn.hasAttribute('data-code')) {
+      var sel2 = window.getSelection();
+      if (sel2 && sel2.toString().length > 0) {
+        document.execCommand('insertHTML', false, '<code>' + sel2.toString() + '</code>');
+      } else {
+        document.execCommand('insertHTML', false, '<code>code</code>');
+      }
+      return;
+    }
+
+    if (btn.hasAttribute('data-link')) {
+      var url = prompt('URL:');
+      if (url) document.execCommand('createLink', false, url);
+      return;
+    }
+
+    if (btn.hasAttribute('data-hr')) {
+      document.execCommand('insertHorizontalRule');
+      return;
+    }
+  });
+
+})();
+</script>
 </body>
 </html>`;
   }
 
   disposeAll(): void {
-    for (const panel of this.panels.values()) {
-      panel.dispose();
-    }
+    for (const panel of this.panels.values()) panel.dispose();
   }
 }
 
 function getNonce(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let result = '';
-  for (let i = 0; i < 32; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return result;
-}
-
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  let r = '';
+  for (let i = 0; i < 32; i++) r += chars[Math.floor(Math.random() * chars.length)];
+  return r;
 }
 
 function escapeAttr(s: string): string {

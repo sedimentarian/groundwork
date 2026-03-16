@@ -236,6 +236,8 @@
     "typescript": "^5.3.3"
   },
   "dependencies": {
-    "easymde": "^2.20.0"
+    "easymde": "^2.20.0",
+    "marked": "^17.0.4",
+    "turndown": "^7.2.2"
   }
 }
