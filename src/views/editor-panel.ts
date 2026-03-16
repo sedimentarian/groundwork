@@ -268,7 +268,7 @@ export class EditorPanelManager {
 <body>
 
 <div class="toolbar">
-  <button id="save-btn" onclick="save()">💾 Save</button>
+  <button id="save-btn">💾 Save</button>
   <span class="status-msg" id="status-msg"></span>
   <span class="save-hint">⌘S also works</span>
 </div>
@@ -288,7 +288,7 @@ export class EditorPanelManager {
   </div>
   <div class="field">
     <label>Status</label>
-    <select id="fm-status" onchange="statusChanged()">${statusOptions}</select>
+    <select id="fm-status">${statusOptions}</select>
   </div>
   <div class="field">
     <label>Priority</label>
@@ -395,6 +395,12 @@ export class EditorPanelManager {
     });
     showStatus('Status updated');
   }
+
+  // Wire save button — addEventListener avoids CSP inline-handler restriction
+  document.getElementById('save-btn').addEventListener('click', save);
+
+  // Status dropdown — immediate write on change
+  document.getElementById('fm-status').addEventListener('change', statusChanged);
 
   // Ctrl/Cmd+S to save
   document.addEventListener('keydown', function(e) {
