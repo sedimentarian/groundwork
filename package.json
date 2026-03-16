@@ -236,6 +236,6 @@
     "typescript": "^5.3.3"
   },
   "dependencies": {
-    "@toast-ui/editor": "^3.2.2"
+    "easymde": "^2.20.0"
   }
 }

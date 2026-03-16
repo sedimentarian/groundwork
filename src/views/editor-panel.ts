@@ -2,11 +2,10 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { VaultManager } from '../vault/manager';
 import { NoteFrontmatter, TaskStatus, GTD_LISTS } from '../vault/types';
-import { parseFrontmatter, serializeFrontmatter } from '../vault/store';
 
 /**
  * Manages WYSIWYG editor webview panels for vault notes.
- * Each file gets its own panel; re-opening focuses the existing one.
+ * Uses EasyMDE (self-contained, no external deps) for markdown editing.
  */
 export class EditorPanelManager {
   private panels = new Map<string, vscode.WebviewPanel>();
@@ -21,7 +20,6 @@ export class EditorPanelManager {
   }
 
   async openFile(filePath: string): Promise<void> {
-    // If already open, focus it
     const existing = this.panels.get(filePath);
     if (existing) {
       existing.reveal();
@@ -39,19 +37,18 @@ export class EditorPanelManager {
         enableScripts: true,
         retainContextWhenHidden: true,
         localResourceRoots: [
-          vscode.Uri.joinPath(this.extensionUri, 'node_modules', '@toast-ui', 'editor', 'dist'),
+          vscode.Uri.joinPath(this.extensionUri, 'node_modules', 'easymde', 'dist'),
         ],
       }
     );
 
     this.panels.set(filePath, panel);
 
-    // Build URIs for editor assets
     const editorJsUri = panel.webview.asWebviewUri(
-      vscode.Uri.joinPath(this.extensionUri, 'node_modules', '@toast-ui', 'editor', 'dist', 'toastui-editor.js')
+      vscode.Uri.joinPath(this.extensionUri, 'node_modules', 'easymde', 'dist', 'easymde.min.js')
     );
     const editorCssUri = panel.webview.asWebviewUri(
-      vscode.Uri.joinPath(this.extensionUri, 'node_modules', '@toast-ui', 'editor', 'dist', 'toastui-editor.css')
+      vscode.Uri.joinPath(this.extensionUri, 'node_modules', 'easymde', 'dist', 'easymde.min.css')
     );
 
     panel.webview.html = this.getHtml(panel.webview, editorJsUri, editorCssUri, note.frontmatter, note.body);
@@ -63,12 +60,8 @@ export class EditorPanelManager {
           const frontmatter: NoteFrontmatter = { ...note.frontmatter, ...msg.frontmatter };
           frontmatter.modified = new Date().toISOString();
           await this.manager.writeNote(filePath, frontmatter, msg.body);
-          // Update panel title
-          if (frontmatter.title) {
-            panel.title = frontmatter.title;
-          }
+          if (frontmatter.title) panel.title = frontmatter.title;
           vscode.window.showInformationMessage('Note saved.');
-          // Update the in-memory note reference
           Object.assign(note.frontmatter, frontmatter);
           note.body = msg.body;
           this.onDidSave?.();
@@ -103,7 +96,6 @@ export class EditorPanelManager {
       .join('');
     const tagsValue = Array.isArray(frontmatter.tags) ? frontmatter.tags.join(', ') : '';
     const contextValue = Array.isArray(frontmatter.context) ? (frontmatter.context as string[]).join(', ') : '';
-    const escapedBody = escapeHtml(body.trim());
 
     return `<!DOCTYPE html>
 <html lang="en">
@@ -179,33 +171,99 @@ export class EditorPanelManager {
       font-size: 12px;
       margin-left: auto;
     }
-    #editor-container {
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      min-height: 400px;
+    .status-msg {
+      font-size: 12px;
+      opacity: 0;
+      transition: opacity 0.3s;
+      color: var(--vscode-notificationsInfoIcon-foreground, #3794ff);
     }
-    /* Override Toast UI editor theme to match VSCode */
-    .toastui-editor-defaultUI { border: none !important; }
-    .toastui-editor-defaultUI .toastui-editor-md-tab-container { display: none !important; }
-    .ProseMirror {
+    .status-msg.show { opacity: 1; }
+
+    /* EasyMDE theme overrides to match VSCode */
+    .EasyMDEContainer .CodeMirror {
       background: var(--bg) !important;
       color: var(--fg) !important;
-      padding: 16px !important;
+      border: 1px solid var(--border) !important;
+      border-radius: 0 0 4px 4px;
+      font-family: var(--vscode-editor-font-family, 'Menlo, Monaco, monospace');
+      font-size: var(--vscode-editor-font-size, 13px);
       min-height: 350px;
     }
-    .toastui-editor-toolbar {
-      background: var(--input-bg) !important;
-      border-bottom: 1px solid var(--border) !important;
+    .EasyMDEContainer .CodeMirror-cursor {
+      border-left-color: var(--fg) !important;
     }
-    .toastui-editor-defaultUI-toolbar button {
+    .EasyMDEContainer .CodeMirror-selected {
+      background: var(--vscode-editor-selectionBackground, rgba(0,120,215,0.3)) !important;
+    }
+    .EasyMDEContainer .editor-toolbar {
+      background: var(--input-bg) !important;
+      border: 1px solid var(--border) !important;
+      border-bottom: none !important;
+      border-radius: 4px 4px 0 0;
+      opacity: 1 !important;
+    }
+    .EasyMDEContainer .editor-toolbar button {
       color: var(--fg) !important;
+      border: none !important;
+      background: transparent !important;
+    }
+    .EasyMDEContainer .editor-toolbar button:hover,
+    .EasyMDEContainer .editor-toolbar button.active {
+      background: var(--vscode-toolbar-hoverBackground, rgba(255,255,255,0.1)) !important;
+      border-radius: 3px;
+    }
+    .EasyMDEContainer .editor-toolbar i.separator {
+      border-left-color: var(--border) !important;
+    }
+    .EasyMDEContainer .editor-statusbar {
+      color: var(--fg) !important;
+      opacity: 0.5;
+      background: var(--input-bg) !important;
+      border-top: 1px solid var(--border) !important;
+    }
+    .EasyMDEContainer .editor-preview {
+      background: var(--bg) !important;
+      color: var(--fg) !important;
+    }
+    .EasyMDEContainer .editor-preview-side {
+      background: var(--bg) !important;
+      color: var(--fg) !important;
+      border-left: 1px solid var(--border) !important;
+    }
+    /* Rendered markdown styles in preview */
+    .editor-preview h1, .editor-preview h2, .editor-preview h3,
+    .editor-preview-side h1, .editor-preview-side h2, .editor-preview-side h3 {
+      color: var(--fg) !important;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 4px;
+    }
+    .editor-preview code, .editor-preview-side code {
+      background: var(--input-bg) !important;
+      color: var(--fg) !important;
+      padding: 2px 4px;
+      border-radius: 3px;
+    }
+    .editor-preview pre, .editor-preview-side pre {
+      background: var(--input-bg) !important;
+      border: 1px solid var(--border) !important;
+      border-radius: 4px;
+      padding: 12px !important;
+    }
+    .editor-preview a, .editor-preview-side a {
+      color: var(--vscode-textLink-foreground, #3794ff) !important;
+    }
+    .editor-preview blockquote, .editor-preview-side blockquote {
+      border-left: 3px solid var(--border) !important;
+      color: var(--fg) !important;
+      opacity: 0.8;
     }
   </style>
 </head>
 <body>
 
 <div class="toolbar">
-  <button id="save-btn" onclick="save()">Save</button>
+  <button id="save-btn" onclick="save()">💾 Save</button>
+  <span class="status-msg" id="status-msg"></span>
   <span class="save-hint">⌘S also works</span>
 </div>
 
@@ -252,71 +310,78 @@ export class EditorPanelManager {
   </div>
 </div>
 
-<div id="editor-container"></div>
+<textarea id="md-editor">${escapeHtml(body.trim())}</textarea>
 
 <script nonce="${nonce}" src="${editorJsUri}"></script>
 <script nonce="${nonce}">
   const vscode = acquireVsCodeApi();
+  let statusTimer;
 
-  // Initialize Toast UI Editor in WYSIWYG mode
-  const editor = new toastui.Editor({
-    el: document.getElementById('editor-container'),
-    initialEditType: 'wysiwyg',
-    initialValue: ${JSON.stringify(body.trim())},
-    previewStyle: 'tab',
-    height: '500px',
-    usageStatistics: false,
-    toolbarItems: [
-      ['heading', 'bold', 'italic', 'strike'],
-      ['hr', 'quote'],
-      ['ul', 'ol', 'task', 'indent', 'outdent'],
-      ['table', 'link'],
-      ['code', 'codeblock'],
+  function showStatus(msg) {
+    const el = document.getElementById('status-msg');
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(statusTimer);
+    statusTimer = setTimeout(() => el.classList.remove('show'), 3000);
+  }
+
+  // Initialize EasyMDE
+  const editor = new EasyMDE({
+    element: document.getElementById('md-editor'),
+    initialValue: '',
+    autofocus: true,
+    spellChecker: false,
+    status: ['lines', 'words', 'cursor'],
+    toolbar: [
+      'bold', 'italic', 'strikethrough', '|',
+      'heading-1', 'heading-2', 'heading-3', '|',
+      'unordered-list', 'ordered-list', 'checklist', '|',
+      'quote', 'code', '|',
+      'link', 'image', 'table', 'horizontal-rule', '|',
+      'preview', 'side-by-side', '|',
+      'guide'
     ],
+    renderingConfig: {
+      codeSyntaxHighlighting: false,
+    },
+    previewClass: ['editor-preview'],
   });
 
   function gatherFrontmatter() {
-    const fm = {
+    return {
       title: document.getElementById('fm-title').value,
       type: document.getElementById('fm-type').value,
+      status: document.getElementById('fm-status').value,
+      priority: document.getElementById('fm-priority').value,
+      context: document.getElementById('fm-context').value
+        .split(',').map(function(s) { return s.trim(); }).filter(Boolean),
       project: document.getElementById('fm-project').value || undefined,
       tags: document.getElementById('fm-tags').value
-        .split(',').map(s => s.trim()).filter(Boolean),
+        .split(',').map(function(s) { return s.trim(); }).filter(Boolean),
       due: document.getElementById('fm-due').value || undefined,
     };
-
-    const statusEl = document.getElementById('fm-status');
-    if (statusEl) fm.status = statusEl.value;
-
-    const priorityEl = document.getElementById('fm-priority');
-    if (priorityEl) fm.priority = priorityEl.value;
-
-    const contextEl = document.getElementById('fm-context');
-    if (contextEl) {
-      fm.context = contextEl.value.split(',').map(s => s.trim()).filter(Boolean);
-    }
-
-    return fm;
   }
 
   function save() {
     vscode.postMessage({
       type: 'save',
       frontmatter: gatherFrontmatter(),
-      body: editor.getMarkdown(),
+      body: editor.value(),
     });
+    showStatus('✓ Saved');
   }
 
   function statusChanged() {
-    const statusEl = document.getElementById('fm-status');
+    const status = document.getElementById('fm-status').value;
     vscode.postMessage({
       type: 'statusChange',
-      status: statusEl.value,
+      status: status,
     });
+    showStatus('Status updated');
   }
 
   // Ctrl/Cmd+S to save
-  document.addEventListener('keydown', (e) => {
+  document.addEventListener('keydown', function(e) {
     if ((e.metaKey || e.ctrlKey) && e.key === 's') {
       e.preventDefault();
       save();
