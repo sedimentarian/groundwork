@@ -2,7 +2,7 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Run KB Vault Extension",
+      "name": "Run Groundwork Extension",
       "type": "extensionHost",
       "request": "launch",
       "args": [

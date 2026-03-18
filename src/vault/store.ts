@@ -10,6 +10,7 @@ export class VaultStore {
     const dirs = [
       this.rootDir,
       path.join(this.rootDir, 'inbox'),
+      path.join(this.rootDir, 'notes'),
       path.join(this.rootDir, 'projects'),
       path.join(this.rootDir, 'reference'),
       path.join(this.rootDir, 'logs'),
@@ -43,12 +44,15 @@ export class VaultStore {
           source: this.scope,
         });
       } else if (entry.name.endsWith('.md')) {
+        const meta = await this.quickReadMeta(fullPath);
         results.push({
           path: fullPath,
           relativePath,
           name: entry.name,
           isDirectory: false,
           source: this.scope,
+          title: meta.title,
+          noteType: meta.type,
         });
       }
     }
@@ -60,6 +64,24 @@ export class VaultStore {
     });
 
     return results;
+  }
+
+  /** Read just enough of a file to extract title and type from frontmatter */
+  private async quickReadMeta(filePath: string): Promise<{ title?: string; type?: string }> {
+    try {
+      const fd = await fs.promises.open(filePath, 'r');
+      try {
+        const buf = Buffer.alloc(1024);
+        const { bytesRead } = await fd.read(buf, 0, 1024, 0);
+        const snippet = buf.slice(0, bytesRead).toString('utf-8');
+        const { frontmatter } = parseFrontmatter(snippet);
+        return { title: frontmatter.title, type: frontmatter.type };
+      } finally {
+        await fd.close();
+      }
+    } catch {
+      return {};
+    }
   }
 
   /** Read and parse a markdown file with frontmatter */
@@ -145,6 +167,21 @@ export class VaultStore {
     await fs.promises.unlink(filePath);
   }
 
+  /** Return a path that doesn't exist yet, appending -2, -3 etc. if needed */
+  async findAvailablePath(dir: string, slug: string, ext = '.md'): Promise<string> {
+    let candidate = path.join(dir, `${slug}${ext}`);
+    let i = 2;
+    while (true) {
+      try {
+        await fs.promises.access(candidate);
+        candidate = path.join(dir, `${slug}-${i}${ext}`);
+        i++;
+      } catch {
+        return candidate; // access threw → file doesn't exist
+      }
+    }
+  }
+
   /** Rename/move a file within the vault */
   async rename(oldPath: string, newPath: string): Promise<void> {
     this.assertWithinVault(oldPath);
@@ -179,9 +216,9 @@ export class VaultStore {
   }
 }
 
-/** Parse YAML-like frontmatter from markdown */
+/** Parse YAML-like frontmatter from markdown — handles inline [a, b] and block (- item) arrays */
 export function parseFrontmatter(raw: string): { frontmatter: NoteFrontmatter; body: string } {
-  const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/);
+  const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
   if (!match) {
     return { frontmatter: {}, body: raw };
   }
@@ -189,21 +226,48 @@ export function parseFrontmatter(raw: string): { frontmatter: NoteFrontmatter; b
   const frontmatter: NoteFrontmatter = {};
   const lines = match[1].split('\n');
 
+  let currentKey: string | null = null;
+  let currentArray: string[] | null = null;
+
+  const flushArray = () => {
+    if (currentKey !== null && currentArray !== null) {
+      (frontmatter as Record<string, unknown>)[currentKey] = currentArray;
+    }
+    currentKey = null;
+    currentArray = null;
+  };
+
   for (const line of lines) {
+    // YAML block-sequence item: '  - value' (leading whitespace, dash, space)
+    const arrayItem = line.match(/^\s+-\s+(.*)/);
+    if (arrayItem && currentKey !== null) {
+      currentArray!.push(arrayItem[1].trim().replace(/^["']|["']$/g, ''));
+      continue;
+    }
+
+    // A new key-value pair — flush any pending array first
+    flushArray();
+
     const colonIdx = line.indexOf(':');
     if (colonIdx === -1) continue;
 
     const key = line.slice(0, colonIdx).trim();
-    let value: string | string[] = line.slice(colonIdx + 1).trim();
+    const raw_val = line.slice(colonIdx + 1).trim();
 
-    // Handle arrays: [item1, item2] or - item format
-    if (value.startsWith('[') && value.endsWith(']')) {
-      value = value.slice(1, -1).split(',').map(s => s.trim().replace(/^["']|["']$/g, ''));
+    if (raw_val === '') {
+      // Empty value — might be start of a block array
+      currentKey = key;
+      currentArray = [];
+    } else if (raw_val.startsWith('[') && raw_val.endsWith(']')) {
+      // Inline array: [item1, item2]
+      const items = raw_val.slice(1, -1).split(',').map(s => s.trim().replace(/^["']|["']$/g, ''));
+      (frontmatter as Record<string, unknown>)[key] = items;
+    } else {
+      (frontmatter as Record<string, unknown>)[key] = raw_val;
     }
-
-    (frontmatter as Record<string, unknown>)[key] = value;
   }
 
+  flushArray();
   return { frontmatter, body: match[2] };
 }
 

@@ -34,6 +34,10 @@ export interface VaultFile {
   isDirectory: boolean;
   children?: VaultFile[];
   source: VaultScope;
+  /** Frontmatter title, populated by listFiles() for markdown files */
+  title?: string;
+  /** Frontmatter type, populated by listFiles() for markdown files */
+  noteType?: string;
 }
 
 export interface ParsedNote {

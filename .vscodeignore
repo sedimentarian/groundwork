@@ -1,4 +1,11 @@
-src/**
-node_modules/**
 .vscode/**
+.vscode-test/**
+src/**
+docs/**
+node_modules/**
+.gitignore
 tsconfig.json
+**/*.ts
+**/*.map
+.groundwork/**
+.claude/**

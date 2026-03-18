@@ -45,7 +45,7 @@ export class VaultManager {
     }
   }
 
-  /** Initialize workspace vault on demand (creates .kbvault/ in workspace) */
+  /** Initialize workspace vault on demand (creates .groundwork/ in workspace) */
   async initWorkspace(workspacePath: string): Promise<void> {
     this.config.workspacePath = workspacePath;
     this.workspace = new VaultStore(workspacePath, 'workspace');
