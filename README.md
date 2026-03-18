@@ -297,6 +297,7 @@ All available via Command Palette (`Cmd+Shift+P`) prefixed with `Groundwork:`.
 | Command | Description |
 |---|---|
 | Daily Briefing | AI-powered daily overview |
+| Weekly Review | Guided GTD review: waiting → active → someday → inbox → done → capture |
 | New Task | Create a task |
 | New Note | Create a note (blank, template, or AI-generated) |
 | Open in WYSIWYG Editor | Open a vault file in the rich editor |

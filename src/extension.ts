@@ -12,6 +12,7 @@ import { checkStaleness } from './vault/staleness';
 import { EditorPanelManager } from './views/editor-panel';
 import { BriefingPanelManager } from './views/briefing-panel';
 import { pickNoteCreationMethod } from './note-creation';
+import { runWeeklyReview } from './weekly-review';
 
 let manager: VaultManager;
 let contextGen: ContextGenerator;
@@ -672,6 +673,11 @@ export async function activate(ctx: vscode.ExtensionContext) {
     // Daily Briefing
     vscode.commands.registerCommand('groundwork.dailyBriefing', async () => {
       await briefingPanel.open();
+    }),
+
+    // Weekly Review — guided GTD review wizard
+    vscode.commands.registerCommand('groundwork.weeklyReview', async () => {
+      await runWeeklyReview(manager, sessionTracker, refreshAll);
     }),
 
     // Log Activity

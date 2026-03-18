@@ -159,6 +159,20 @@ Compile a summary of the user's current state. Read all task files and present:
 Format it as a clean, scannable summary. Keep it brief — this is a dashboard
 glance, not a deep report.
 
+### Weekly Review
+
+Walk the user through a guided GTD weekly review. Go through each phase in order:
+
+1. **Waiting For** — anything unblocked? Move to Next/Active
+2. **Active** — still working on these? Complete or pause?
+3. **Someday / Maybe** — promote, kill, or keep?
+4. **Inbox** — triage each untriaged item
+5. **Recently Completed** — celebrate, identify follow-ups
+6. **Capture** — anything new to add?
+
+For each task in phases 1-4, present the task and ask what to do with it.
+Log a session entry when the review completes.
+
 ### Context Compilation
 
 When the user needs to share context with another AI tool or document what

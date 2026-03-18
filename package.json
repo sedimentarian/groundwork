@@ -140,6 +140,12 @@
         "icon": "$(calendar)"
       },
       {
+        "command": "groundwork.weeklyReview",
+        "title": "Groundwork: Weekly Review",
+        "shortTitle": "Weekly Review",
+        "icon": "$(checklist)"
+      },
+      {
         "command": "groundwork.filterByTag",
         "title": "Groundwork: Filter Tasks",
         "shortTitle": "Filter",
@@ -339,12 +345,15 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "lint": "eslint src --ext ts"
+    "lint": "eslint src --ext ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
     "@types/vscode": "^1.89.0",
-    "typescript": "^5.3.3"
+    "typescript": "^5.3.3",
+    "vitest": "^4.1.0"
   },
   "dependencies": {
     "easymde": "^2.20.0",
