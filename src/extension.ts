@@ -5,7 +5,7 @@ import { VaultManager } from './vault/manager';
 import { TaskStatus, GTD_LISTS, VaultScope, ParsedNote } from './vault/types';
 import { ContextGenerator } from './context/generator';
 import { SessionTracker } from './session/tracker';
-import { VaultTreeProvider } from './views/vault-tree';
+import { VaultTreeProvider, VaultFilter } from './views/vault-tree';
 import { TaskTreeProvider, TaskItem, TaskFilter } from './views/task-tree';
 import { SessionTreeProvider } from './views/session-tree';
 import { checkStaleness } from './vault/staleness';
@@ -61,6 +61,9 @@ export async function activate(ctx: vscode.ExtensionContext) {
   out.appendLine(`[Groundwork] Activated`);
   out.appendLine(`[Groundwork] Global vault: ${globalPath}`);
   if (manager.workspacePath) out.appendLine(`[Groundwork] Workspace vault: ${manager.workspacePath}`);
+
+  // Set context key so Init Workspace button hides when vault already exists
+  vscode.commands.executeCommand('setContext', 'groundwork.hasWorkspaceVault', !!manager.workspaceStore);
 
   // Tree views
   const vaultTree = new VaultTreeProvider(manager);
@@ -130,7 +133,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
   const vaultView = vscode.window.createTreeView('groundwork.vault', {
     treeDataProvider: vaultTree,
     dragAndDropController: vaultTree,
-    showCollapseAll: true,
+    showCollapseAll: false,
     canSelectMany: false,
   });
 
@@ -302,6 +305,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
 
       const wPath = path.join(workspaceFolder.uri.fsPath, '.groundwork');
       await manager.initWorkspace(wPath);
+      vscode.commands.executeCommand('setContext', 'groundwork.hasWorkspaceVault', true);
       refreshAll();
       vscode.window.showInformationMessage(`Workspace vault created at: ${wPath}`);
     }),
@@ -541,16 +545,18 @@ export async function activate(ctx: vscode.ExtensionContext) {
       }
     }),
 
-    // Move task to global vault
-    vscode.commands.registerCommand('groundwork.moveToGlobal', async (item?: TaskItem) => {
-      if (!item) { vscode.window.showWarningMessage('Select a task first.'); return; }
-      await moveNote(item.note, 'global');
+    // Move to global vault — works for both tasks and vault files
+    vscode.commands.registerCommand('groundwork.moveToGlobal', async (item?: any) => {
+      const note = await resolveNote(item);
+      if (!note) { vscode.window.showWarningMessage('Select an item first.'); return; }
+      await moveNote(note, 'global');
     }),
 
-    // Move task to workspace vault
-    vscode.commands.registerCommand('groundwork.moveToWorkspace', async (item?: TaskItem) => {
-      if (!item) { vscode.window.showWarningMessage('Select a task first.'); return; }
-      await moveNote(item.note, 'workspace');
+    // Move to workspace vault — works for both tasks and vault files
+    vscode.commands.registerCommand('groundwork.moveToWorkspace', async (item?: any) => {
+      const note = await resolveNote(item);
+      if (!note) { vscode.window.showWarningMessage('Select an item first.'); return; }
+      await moveNote(note, 'workspace');
     }),
 
     // Quick Context — one click: copies Active + Next tasks to clipboard, ready to paste into any AI tool
@@ -699,59 +705,50 @@ export async function activate(ctx: vscode.ExtensionContext) {
       await runWeeklyReview(manager, sessionTracker, refreshAll);
     }),
 
+    // Filter Vault — unified multi-dimension filter (type, tag, search)
+    vscode.commands.registerCommand('groundwork.filterVault', async () => {
+      await showVaultFilterPicker(vaultTree, vaultView);
+    }),
+
     // Search Vault — full-text search across vault notes
     vscode.commands.registerCommand('groundwork.searchVault', async () => {
-      const current = vaultTree.searchQuery;
+      const current = vaultTree.filter.search;
       const query = await vscode.window.showInputBox({
         prompt: 'Search vault notes (title, body, tags, type)',
         placeHolder: 'Type to search…',
         value: current ?? '',
       });
       if (query === undefined) return; // cancelled
-      if (query === '') {
-        vaultTree.clearSearch();
-      } else {
-        vaultTree.setSearch(query);
-      }
-      vscode.commands.executeCommand('setContext', 'groundwork.vaultSearchActive', vaultTree.hasActiveSearch);
-      vaultView.message = vaultTree.hasActiveSearch ? `Search: "${vaultTree.searchQuery}"` : undefined;
+      vaultTree.updateFilter('search', query || undefined);
+      syncVaultFilterContext(vaultTree);
+      updateVaultViewMessage(vaultTree, vaultView);
     }),
 
-    // Clear Vault Search
-    vscode.commands.registerCommand('groundwork.clearVaultSearch', () => {
-      vaultTree.clearSearch();
-      vscode.commands.executeCommand('setContext', 'groundwork.vaultSearchActive', false);
-      vaultView.message = undefined;
+    // Clear Vault Filters
+    vscode.commands.registerCommand('groundwork.clearVaultFilter', () => {
+      vaultTree.clearFilter();
+      syncVaultFilterContext(vaultTree);
+      updateVaultViewMessage(vaultTree, vaultView);
     }),
 
-    // Filter Vault by Type — quick filter for notes, references, projects, logs
-    vscode.commands.registerCommand('groundwork.filterVaultByType', async () => {
-      const types = [
-        { label: '$(note) Notes', value: 'note' },
-        { label: '$(book) References', value: 'reference' },
-        { label: '$(project) Projects', value: 'project' },
-        { label: '$(output) Logs', value: 'log' },
-      ];
+    // Collapse/Expand All — Tasks
+    vscode.commands.registerCommand('groundwork.collapseAllTasks', () => {
+      taskTree.setCollapsed(true);
+      vscode.commands.executeCommand('setContext', 'groundwork.tasksCollapsed', true);
+    }),
+    vscode.commands.registerCommand('groundwork.expandAllTasks', () => {
+      taskTree.setCollapsed(false);
+      vscode.commands.executeCommand('setContext', 'groundwork.tasksCollapsed', false);
+    }),
 
-      if (vaultTree.hasActiveSearch) {
-        types.unshift({ label: '$(close) Clear Filter', value: '' });
-      }
-
-      const picked = await vscode.window.showQuickPick(types, {
-        placeHolder: 'Filter vault by note type',
-      });
-      if (!picked) return;
-
-      if (picked.value === '') {
-        vaultTree.clearSearch();
-        vscode.commands.executeCommand('setContext', 'groundwork.vaultSearchActive', false);
-        vaultView.message = undefined;
-      } else {
-        // Use the type as a search query — the search implementation checks type field
-        vaultTree.setSearch(picked.value);
-        vscode.commands.executeCommand('setContext', 'groundwork.vaultSearchActive', true);
-        vaultView.message = `Type: ${picked.label.replace(/\$\([^)]+\)\s*/, '')}`;
-      }
+    // Collapse/Expand All — Vault
+    vscode.commands.registerCommand('groundwork.collapseAllVault', () => {
+      vaultTree.setCollapsed(true);
+      vscode.commands.executeCommand('setContext', 'groundwork.vaultCollapsed', true);
+    }),
+    vscode.commands.registerCommand('groundwork.expandAllVault', () => {
+      vaultTree.setCollapsed(false);
+      vscode.commands.executeCommand('setContext', 'groundwork.vaultCollapsed', false);
     }),
 
     // Log Activity
@@ -888,7 +885,19 @@ export async function activate(ctx: vscode.ExtensionContext) {
   }
 }
 
-// ── Filter helpers ───────────────────────────────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Resolve a tree item (TaskItem or VaultFile) to a ParsedNote */
+async function resolveNote(item: any): Promise<ParsedNote | undefined> {
+  if (!item) return undefined;
+  // TaskItem
+  if (item.kind === 'item' && item.note) return item.note;
+  // VaultFile (has path, not a directory)
+  if (item.path && !item.isDirectory) return manager.readNote(item.path);
+  return undefined;
+}
+
+// ── Task filter helpers ─────────────────────────────────────────────────────
 
 /** Update VS Code context key so the Clear button shows/hides */
 function syncFilterContext(taskTree: TaskTreeProvider): void {
@@ -901,6 +910,133 @@ function updateViewMessage(taskTree: TaskTreeProvider, view: vscode.TreeView<any
     view.message = `Filter: ${taskTree.getFilterDescription()}`;
   } else {
     view.message = undefined;
+  }
+}
+
+// ── Vault filter helpers ────────────────────────────────────────────────────
+
+function syncVaultFilterContext(vaultTree: VaultTreeProvider): void {
+  vscode.commands.executeCommand('setContext', 'groundwork.vaultFilterActive', vaultTree.hasActiveFilter);
+}
+
+function updateVaultViewMessage(vaultTree: VaultTreeProvider, view: vscode.TreeView<any>): void {
+  if (vaultTree.hasActiveFilter) {
+    view.message = `Filter: ${vaultTree.getFilterDescription()}`;
+  } else {
+    view.message = undefined;
+  }
+}
+
+async function showVaultFilterPicker(vaultTree: VaultTreeProvider, vaultView: vscode.TreeView<any>): Promise<void> {
+  const currentFilter = vaultTree.filter;
+
+  interface FilterOption extends vscode.QuickPickItem { key: string }
+  const options: FilterOption[] = [
+    {
+      label: '$(note) Filter by Type',
+      description: currentFilter.type ? `(active: ${currentFilter.type})` : '',
+      key: 'type',
+    },
+    {
+      label: '$(tag) Filter by Tag',
+      description: currentFilter.tag ? `(active: ${currentFilter.tag})` : '',
+      key: 'tag',
+    },
+    {
+      label: '$(search) Search Text',
+      description: currentFilter.search ? `(active: "${currentFilter.search}")` : '',
+      key: 'search',
+    },
+  ];
+
+  if (vaultTree.hasActiveFilter) {
+    options.push({
+      label: '$(close) Clear All Filters',
+      description: vaultTree.getFilterDescription(),
+      key: 'clear',
+    });
+  }
+
+  const picked = await vscode.window.showQuickPick(options, {
+    placeHolder: vaultTree.hasActiveFilter
+      ? `Active: ${vaultTree.getFilterDescription()} — add/change a filter`
+      : 'Choose a filter type',
+  });
+  if (!picked) return;
+
+  if (picked.key === 'clear') {
+    vaultTree.clearFilter();
+    syncVaultFilterContext(vaultTree);
+    updateVaultViewMessage(vaultTree, vaultView);
+    return;
+  }
+
+  if (picked.key === 'search') {
+    const query = await vscode.window.showInputBox({
+      prompt: 'Search vault notes (title, body, tags, type)',
+      placeHolder: 'Type to search…',
+      value: currentFilter.search ?? '',
+    });
+    if (query === undefined) return;
+    vaultTree.updateFilter('search', query || undefined);
+    syncVaultFilterContext(vaultTree);
+    updateVaultViewMessage(vaultTree, vaultView);
+    return;
+  }
+
+  if (picked.key === 'type') {
+    const typeOptions = [
+      { label: 'note', description: '' },
+      { label: 'reference', description: '' },
+      { label: 'project', description: '' },
+      { label: 'log', description: '' },
+    ];
+    if (currentFilter.type) {
+      typeOptions.unshift({ label: '$(close) Clear type filter', description: '' });
+    }
+    const typePicked = await vscode.window.showQuickPick(typeOptions, {
+      placeHolder: currentFilter.type
+        ? `Filtering by type: "${currentFilter.type}" — pick a new value or clear`
+        : 'Select a type',
+    });
+    if (!typePicked) return;
+    if (typePicked.label.startsWith('$(close)')) {
+      vaultTree.updateFilter('type', undefined);
+    } else {
+      vaultTree.updateFilter('type', typePicked.label);
+    }
+    syncVaultFilterContext(vaultTree);
+    updateVaultViewMessage(vaultTree, vaultView);
+    return;
+  }
+
+  if (picked.key === 'tag') {
+    const tags = await vaultTree.getAllTags();
+    if (tags.length === 0) {
+      vscode.window.showInformationMessage('No tags found in vault notes.');
+      return;
+    }
+    const tagOptions = tags.map(t => ({
+      label: t,
+      description: t === currentFilter.tag ? '(active)' : '',
+    }));
+    if (currentFilter.tag) {
+      tagOptions.unshift({ label: '$(close) Clear tag filter', description: '' });
+    }
+    const tagPicked = await vscode.window.showQuickPick(tagOptions, {
+      placeHolder: currentFilter.tag
+        ? `Filtering by tag: "${currentFilter.tag}" — pick a new value or clear`
+        : 'Select a tag',
+    });
+    if (!tagPicked) return;
+    if (tagPicked.label.startsWith('$(close)')) {
+      vaultTree.updateFilter('tag', undefined);
+    } else {
+      vaultTree.updateFilter('tag', tagPicked.label);
+    }
+    syncVaultFilterContext(vaultTree);
+    updateVaultViewMessage(vaultTree, vaultView);
+    return;
   }
 }
 

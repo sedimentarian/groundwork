@@ -36,6 +36,7 @@ export class TaskTreeProvider implements vscode.TreeDataProvider<TaskTreeItem>,
   private cache: Map<TaskStatus, ParsedNote[]> = new Map();
   private _filter: TaskFilter = {};
   private _dragInProgress = false;
+  private _allCollapsed = false;
 
   /** Callback invoked when a drop changes a task — lets extension.ts log + refresh */
   onTaskDropped?: (filePath: string, detail: string) => void;
@@ -92,6 +93,18 @@ export class TaskTreeProvider implements vscode.TreeDataProvider<TaskTreeItem>,
   }
 
   refresh(): void {
+    this.cache.clear();
+    this._onDidChangeTreeData.fire(undefined);
+  }
+
+  // ── Collapse / Expand ────────────────────────────────────────────────────────
+
+  get allCollapsed(): boolean {
+    return this._allCollapsed;
+  }
+
+  setCollapsed(collapsed: boolean): void {
+    this._allCollapsed = collapsed;
     this.cache.clear();
     this._onDidChangeTreeData.fire(undefined);
   }
@@ -240,10 +253,13 @@ export class TaskTreeProvider implements vscode.TreeDataProvider<TaskTreeItem>,
     if (element.kind === 'group') {
       const count = element.tasks.length;
       const label = `${GTD_LISTS[element.status]} (${count})`;
-      // Expand groups with tasks, collapse empty ones (they're still visible as drop targets)
-      const state = count > 0
-        ? vscode.TreeItemCollapsibleState.Expanded
-        : vscode.TreeItemCollapsibleState.Collapsed;
+      // When all-collapsed mode is active, collapse everything.
+      // Otherwise: expand groups with tasks, collapse empty ones (drop targets).
+      const state = this._allCollapsed
+        ? vscode.TreeItemCollapsibleState.Collapsed
+        : (count > 0
+          ? vscode.TreeItemCollapsibleState.Expanded
+          : vscode.TreeItemCollapsibleState.Collapsed);
       const item = new vscode.TreeItem(label, state);
       item.iconPath = new vscode.ThemeIcon(statusIcon(element.status));
       item.contextValue = 'task-group';

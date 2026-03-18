@@ -1,9 +1,15 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { VaultManager } from '../vault/manager';
-import { VaultFile, VaultScope } from '../vault/types';
+import { VaultFile, VaultScope, ParsedNote } from '../vault/types';
 
 const VAULT_MIME = 'application/vnd.groundwork.vault-file';
+
+export interface VaultFilter {
+  type?: string;    // note, reference, project, log
+  tag?: string;
+  search?: string;
+}
 
 /** A root node representing a vault scope */
 class VaultRoot {
@@ -27,31 +33,72 @@ export class VaultTreeProvider implements vscode.TreeDataProvider<VaultTreeItem>
   private _onDidChangeTreeData = new vscode.EventEmitter<VaultTreeItem | undefined>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
-  private _searchQuery: string | undefined;
+  private _filter: VaultFilter = {};
+  private _allCollapsed = false;
 
   /** Callback when a file is moved via drag-and-drop */
   onFileMoved?: (filePath: string, detail: string) => void;
 
   constructor(private manager: VaultManager) {}
 
-  // ── Search ───────────────────────────────────────────────────────────────────
+  // ── Filter state ─────────────────────────────────────────────────────────────
 
-  get searchQuery(): string | undefined {
-    return this._searchQuery;
+  get filter(): VaultFilter {
+    return { ...this._filter };
   }
 
-  get hasActiveSearch(): boolean {
-    return !!this._searchQuery;
+  get hasActiveFilter(): boolean {
+    return !!(this._filter.type || this._filter.tag || this._filter.search);
   }
 
-  setSearch(query: string | undefined): void {
-    this._searchQuery = query;
+  setFilter(filter: VaultFilter): void {
+    this._filter = { ...filter };
     this._onDidChangeTreeData.fire(undefined);
   }
 
-  clearSearch(): void {
-    this._searchQuery = undefined;
+  updateFilter(key: keyof VaultFilter, value: string | undefined): void {
+    this._filter[key] = value;
     this._onDidChangeTreeData.fire(undefined);
+  }
+
+  clearFilter(): void {
+    this._filter = {};
+    this._onDidChangeTreeData.fire(undefined);
+  }
+
+  getFilterDescription(): string {
+    const parts: string[] = [];
+    if (this._filter.type) parts.push(`type: ${this._filter.type}`);
+    if (this._filter.tag) parts.push(`tag: ${this._filter.tag}`);
+    if (this._filter.search) parts.push(`"${this._filter.search}"`);
+    return parts.join(' · ');
+  }
+
+  // ── Collapse / Expand ────────────────────────────────────────────────────────
+
+  get allCollapsed(): boolean {
+    return this._allCollapsed;
+  }
+
+  setCollapsed(collapsed: boolean): void {
+    this._allCollapsed = collapsed;
+    this._onDidChangeTreeData.fire(undefined);
+  }
+
+  // ── Data helpers ─────────────────────────────────────────────────────────────
+
+  /** Collect all unique tags across all non-task notes */
+  async getAllTags(): Promise<string[]> {
+    const allNotes = await this.manager.queryNotes({});
+    const tagSet = new Set<string>();
+    for (const note of allNotes) {
+      if (note.frontmatter.type === 'task') continue;
+      const tags = note.frontmatter.tags;
+      if (Array.isArray(tags)) {
+        for (const tag of tags) if (tag) tagSet.add(tag);
+      }
+    }
+    return [...tagSet].sort();
   }
 
   refresh(): void {
@@ -131,7 +178,9 @@ export class VaultTreeProvider implements vscode.TreeDataProvider<VaultTreeItem>
       const label = element.scope === 'global' ? '🌐 Global Vault' : '📂 Workspace Vault';
       const item = new vscode.TreeItem(
         label,
-        vscode.TreeItemCollapsibleState.Expanded
+        this._allCollapsed
+          ? vscode.TreeItemCollapsibleState.Collapsed
+          : vscode.TreeItemCollapsibleState.Expanded
       );
       item.iconPath = new vscode.ThemeIcon(icon);
       item.contextValue = `vault-root-${element.scope}`;
@@ -145,10 +194,13 @@ export class VaultTreeProvider implements vscode.TreeDataProvider<VaultTreeItem>
       ? file.name
       : (file.title ?? slugToTitle(file.name.replace(/\.md$/, '')));
 
+    const dirState = this._allCollapsed
+      ? vscode.TreeItemCollapsibleState.Collapsed
+      : vscode.TreeItemCollapsibleState.Collapsed; // dirs start collapsed by default, roots handle expand
     const item = new vscode.TreeItem(
       displayName,
       file.isDirectory
-        ? vscode.TreeItemCollapsibleState.Collapsed
+        ? dirState
         : vscode.TreeItemCollapsibleState.None
     );
 
@@ -159,7 +211,7 @@ export class VaultTreeProvider implements vscode.TreeDataProvider<VaultTreeItem>
         arguments: [vscode.Uri.file(file.path)],
       };
       item.iconPath = new vscode.ThemeIcon(fileIcon(file));
-      item.contextValue = 'vault-file';
+      item.contextValue = file.source === 'workspace' ? 'vault-file-workspace' : 'vault-file-global';
 
       // Description: scope badge + type label
       const scopeEmoji = file.source === 'workspace' ? '📂' : '🌐';
@@ -192,9 +244,9 @@ export class VaultTreeProvider implements vscode.TreeDataProvider<VaultTreeItem>
 
   async getChildren(element?: VaultTreeItem): Promise<VaultTreeItem[]> {
     if (!element) {
-      // If search is active, return flat search results grouped by scope
-      if (this._searchQuery) {
-        return this.getSearchResults(this._searchQuery);
+      // If any filter is active, return flat filtered results
+      if (this.hasActiveFilter) {
+        return this.getFilteredResults();
       }
 
       // Root level: show scope roots
@@ -226,29 +278,45 @@ export class VaultTreeProvider implements vscode.TreeDataProvider<VaultTreeItem>
     return [];
   }
 
-  // ── Search implementation ──────────────────────────────────────────────────
+  // ── Filter implementation ──────────────────────────────────────────────────
 
-  private async getSearchResults(query: string): Promise<VaultTreeItem[]> {
-    const lowerQuery = query.toLowerCase();
-
+  private async getFilteredResults(): Promise<VaultTreeItem[]> {
     // Get all non-task notes from both vaults
     const allNotes = await this.manager.queryNotes({});
-    const nonTaskNotes = allNotes.filter(n => n.frontmatter.type !== 'task');
+    let results = allNotes.filter(n => n.frontmatter.type !== 'task');
 
-    // Search across title, body, tags, and type
-    const matches = nonTaskNotes.filter(note => {
-      const title = (note.frontmatter.title ?? '').toLowerCase();
-      const body = note.body.toLowerCase();
-      const tags = Array.isArray(note.frontmatter.tags) ? note.frontmatter.tags.join(' ').toLowerCase() : '';
-      const type = (note.frontmatter.type ?? '').toLowerCase();
-      const project = (note.frontmatter.project ?? '').toLowerCase();
-      return title.includes(lowerQuery) || body.includes(lowerQuery) ||
-             tags.includes(lowerQuery) || type.includes(lowerQuery) ||
-             project.includes(lowerQuery);
-    });
+    // Apply type filter
+    if (this._filter.type) {
+      const filterType = this._filter.type;
+      results = results.filter(n => n.frontmatter.type === filterType);
+    }
+
+    // Apply tag filter
+    if (this._filter.tag) {
+      const filterTag = this._filter.tag;
+      results = results.filter(n => {
+        const tags = n.frontmatter.tags;
+        return Array.isArray(tags) && tags.includes(filterTag);
+      });
+    }
+
+    // Apply search filter
+    if (this._filter.search) {
+      const query = this._filter.search.toLowerCase();
+      results = results.filter(note => {
+        const title = (note.frontmatter.title ?? '').toLowerCase();
+        const body = note.body.toLowerCase();
+        const tags = Array.isArray(note.frontmatter.tags) ? note.frontmatter.tags.join(' ').toLowerCase() : '';
+        const type = (note.frontmatter.type ?? '').toLowerCase();
+        const project = (note.frontmatter.project ?? '').toLowerCase();
+        return title.includes(query) || body.includes(query) ||
+               tags.includes(query) || type.includes(query) ||
+               project.includes(query);
+      });
+    }
 
     // Convert to VaultFile items for display
-    return matches.map(note => ({
+    return results.map(note => ({
       path: note.path,
       relativePath: note.relativePath,
       name: path.basename(note.path),

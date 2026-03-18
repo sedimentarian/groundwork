@@ -170,16 +170,40 @@
         "icon": "$(search)"
       },
       {
-        "command": "groundwork.clearVaultSearch",
-        "title": "Groundwork: Clear Vault Search",
-        "shortTitle": "Clear Search",
+        "command": "groundwork.clearVaultFilter",
+        "title": "Groundwork: Clear Vault Filters",
+        "shortTitle": "Clear Filters",
         "icon": "$(close)"
       },
       {
-        "command": "groundwork.filterVaultByType",
-        "title": "Groundwork: Filter Vault by Type",
-        "shortTitle": "Filter by Type",
+        "command": "groundwork.filterVault",
+        "title": "Groundwork: Filter Vault",
+        "shortTitle": "Filter",
         "icon": "$(filter)"
+      },
+      {
+        "command": "groundwork.collapseAllTasks",
+        "title": "Groundwork: Collapse All Tasks",
+        "shortTitle": "Collapse All",
+        "icon": "$(collapse-all)"
+      },
+      {
+        "command": "groundwork.expandAllTasks",
+        "title": "Groundwork: Expand All Tasks",
+        "shortTitle": "Expand All",
+        "icon": "$(expand-all)"
+      },
+      {
+        "command": "groundwork.collapseAllVault",
+        "title": "Groundwork: Collapse All Vault",
+        "shortTitle": "Collapse All",
+        "icon": "$(collapse-all)"
+      },
+      {
+        "command": "groundwork.expandAllVault",
+        "title": "Groundwork: Expand All Vault",
+        "shortTitle": "Expand All",
+        "icon": "$(expand-all)"
       }
     ],
     "viewsContainers": {
@@ -210,69 +234,84 @@
     "menus": {
       "view/title": [
         {
-          "command": "groundwork.newTask",
-          "when": "view == groundwork.tasks",
-          "group": "navigation@1"
-        },
-        {
-          "command": "groundwork.newNote",
-          "when": "view == groundwork.vault",
-          "group": "navigation@1"
-        },
-        {
-          "command": "groundwork.searchVault",
-          "when": "view == groundwork.vault",
-          "group": "navigation@2"
-        },
-        {
-          "command": "groundwork.filterVaultByType",
-          "when": "view == groundwork.vault",
-          "group": "navigation@3"
-        },
-        {
-          "command": "groundwork.clearVaultSearch",
-          "when": "view == groundwork.vault && groundwork.vaultSearchActive",
-          "group": "navigation@4"
-        },
-        {
-          "command": "groundwork.initWorkspace",
-          "when": "view == groundwork.vault",
-          "group": "navigation@5"
-        },
-        {
-          "command": "groundwork.compileActiveContext",
-          "when": "view == groundwork.tasks",
-          "group": "navigation@2"
-        },
-        {
-          "command": "groundwork.compileContext",
-          "when": "view == groundwork.tasks",
-          "group": "navigation@3"
-        },
-        {
           "command": "groundwork.dailyBriefing",
           "when": "view == groundwork.tasks",
           "group": "navigation@0"
         },
         {
-          "command": "groundwork.logActivity",
-          "when": "view == groundwork.sessions",
+          "command": "groundwork.weeklyReview",
+          "when": "view == groundwork.tasks",
           "group": "navigation@1"
+        },
+        {
+          "command": "groundwork.newTask",
+          "when": "view == groundwork.tasks",
+          "group": "navigation@2"
         },
         {
           "command": "groundwork.filterByTag",
           "when": "view == groundwork.tasks",
-          "group": "navigation@4"
+          "group": "navigation@3"
         },
         {
           "command": "groundwork.searchTasks",
           "when": "view == groundwork.tasks",
-          "group": "navigation@5"
+          "group": "navigation@4"
         },
         {
           "command": "groundwork.clearTagFilter",
           "when": "view == groundwork.tasks && groundwork.tagFilterActive",
+          "group": "navigation@5"
+        },
+        {
+          "command": "groundwork.collapseAllTasks",
+          "when": "view == groundwork.tasks && !groundwork.tasksCollapsed",
           "group": "navigation@6"
+        },
+        {
+          "command": "groundwork.expandAllTasks",
+          "when": "view == groundwork.tasks && groundwork.tasksCollapsed",
+          "group": "navigation@6"
+        },
+        {
+          "command": "groundwork.newNote",
+          "when": "view == groundwork.vault",
+          "group": "navigation@2"
+        },
+        {
+          "command": "groundwork.filterVault",
+          "when": "view == groundwork.vault",
+          "group": "navigation@3"
+        },
+        {
+          "command": "groundwork.searchVault",
+          "when": "view == groundwork.vault",
+          "group": "navigation@4"
+        },
+        {
+          "command": "groundwork.clearVaultFilter",
+          "when": "view == groundwork.vault && groundwork.vaultFilterActive",
+          "group": "navigation@5"
+        },
+        {
+          "command": "groundwork.collapseAllVault",
+          "when": "view == groundwork.vault && !groundwork.vaultCollapsed",
+          "group": "navigation@6"
+        },
+        {
+          "command": "groundwork.expandAllVault",
+          "when": "view == groundwork.vault && groundwork.vaultCollapsed",
+          "group": "navigation@6"
+        },
+        {
+          "command": "groundwork.initWorkspace",
+          "when": "view == groundwork.vault && !groundwork.hasWorkspaceVault",
+          "group": "navigation@7"
+        },
+        {
+          "command": "groundwork.logActivity",
+          "when": "view == groundwork.sessions",
+          "group": "navigation@1"
         },
         {
           "command": "groundwork.refresh",
@@ -292,24 +331,29 @@
           "group": "1_actions@2"
         },
         {
+          "command": "groundwork.compileContext",
+          "when": "viewItem =~ /^vault-file/ || viewItem =~ /^task-item/",
+          "group": "1_actions@3"
+        },
+        {
+          "command": "groundwork.compileActiveContext",
+          "when": "viewItem =~ /^task-item/",
+          "group": "1_actions@4"
+        },
+        {
           "command": "groundwork.moveToWorkspace",
-          "when": "view == groundwork.tasks && viewItem == task-item-global",
+          "when": "viewItem == task-item-global || viewItem == vault-file-global",
           "group": "2_move@1"
         },
         {
           "command": "groundwork.moveToGlobal",
-          "when": "view == groundwork.tasks && viewItem == task-item-workspace",
+          "when": "viewItem == task-item-workspace || viewItem == vault-file-workspace",
           "group": "2_move@1"
         },
         {
           "command": "groundwork.deleteNote",
-          "when": "viewItem == vault-file || viewItem =~ /^task-item/",
+          "when": "viewItem =~ /^vault-file/ || viewItem =~ /^task-item/",
           "group": "3_delete@1"
-        },
-        {
-          "command": "groundwork.compileContext",
-          "when": "viewItem == vault-file || viewItem =~ /^task-item/",
-          "group": "1_actions@3"
         },
         {
           "command": "groundwork.newNoteHere",
