@@ -285,6 +285,38 @@
         }
       ]
     },
+    "keybindings": [
+      {
+        "command": "groundwork.newTask",
+        "key": "cmd+shift+g cmd+shift+t",
+        "linux": "ctrl+shift+g ctrl+shift+t"
+      },
+      {
+        "command": "groundwork.newNote",
+        "key": "cmd+shift+g cmd+shift+n",
+        "linux": "ctrl+shift+g ctrl+shift+n"
+      },
+      {
+        "command": "groundwork.dailyBriefing",
+        "key": "cmd+shift+g cmd+shift+b",
+        "linux": "ctrl+shift+g ctrl+shift+b"
+      },
+      {
+        "command": "groundwork.compileActiveContext",
+        "key": "cmd+shift+g cmd+shift+c",
+        "linux": "ctrl+shift+g ctrl+shift+c"
+      },
+      {
+        "command": "groundwork.searchTasks",
+        "key": "cmd+shift+g cmd+shift+s",
+        "linux": "ctrl+shift+g ctrl+shift+s"
+      },
+      {
+        "command": "groundwork.logActivity",
+        "key": "cmd+shift+g cmd+shift+l",
+        "linux": "ctrl+shift+g ctrl+shift+l"
+      }
+    ],
     "configuration": {
       "title": "Groundwork",
       "properties": {
