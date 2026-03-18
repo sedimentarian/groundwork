@@ -12,10 +12,12 @@ export interface TaskFilter {
 type TaskTreeItem = TaskGroup | TaskItem;
 
 class TaskGroup {
+  readonly kind = 'group' as const;
   constructor(public status: TaskStatus, public tasks: ParsedNote[]) {}
 }
 
 export class TaskItem {
+  readonly kind = 'item' as const;
   constructor(public note: ParsedNote) {}
 }
 
@@ -139,7 +141,7 @@ export class TaskTreeProvider implements vscode.TreeDataProvider<TaskTreeItem>,
 
   handleDrag(source: readonly TaskTreeItem[], dataTransfer: vscode.DataTransfer, token: vscode.CancellationToken): void {
     // Only task items can be dragged, not group headers
-    const taskItems = source.filter((s): s is TaskItem => s instanceof TaskItem);
+    const taskItems = source.filter((s): s is TaskItem => 'kind' in s && s.kind === 'item');
     if (taskItems.length === 0) return;
     dataTransfer.set(TASK_MIME, new vscode.DataTransferItem(
       taskItems.map(t => t.note.path)
@@ -149,10 +151,13 @@ export class TaskTreeProvider implements vscode.TreeDataProvider<TaskTreeItem>,
     this._dragInProgress = true;
     this._onDidChangeTreeData.fire(undefined);
 
-    // When drag is cancelled (escape, drop outside), hide empty groups again
+    // When drag is cancelled (escape, drop outside), just reset the flag.
+    // Don't fire tree change here — it races with handleDrop and can cause
+    // VS Code to render stale data and then debounce the real refresh.
+    // handleDrop calls refresh() after writing; for cancelled drags the
+    // empty groups disappear on the next natural refresh.
     token.onCancellationRequested(() => {
       this._dragInProgress = false;
-      this._onDidChangeTreeData.fire(undefined);
     });
   }
 
@@ -160,85 +165,79 @@ export class TaskTreeProvider implements vscode.TreeDataProvider<TaskTreeItem>,
     this._dragInProgress = false;
 
     const item = dataTransfer.get(TASK_MIME);
-    if (!item) return;
+    if (!item) { return; }
     const draggedPaths: string[] = item.value;
-    if (!draggedPaths || draggedPaths.length === 0) return;
+    if (!draggedPaths || draggedPaths.length === 0) { return; }
 
-    if (!target) return;
+    if (!target) { return; }
 
-    // ── Drop on a group header → change status ──
-    if (target instanceof TaskGroup) {
-      const newStatus = target.status;
-      for (const filePath of draggedPaths) {
-        const note = await this.manager.readNote(filePath);
-        const oldStatus = note.frontmatter.status ?? 'inbox';
-        if (oldStatus === newStatus) continue;
-        note.frontmatter.status = newStatus;
+    // Determine target type — use discriminator property instead of instanceof,
+    // which can fail if VS Code wraps/proxies tree elements
+    const isGroup = 'kind' in target && target.kind === 'group';
+    const isItem = 'kind' in target && target.kind === 'item';
+    // Determine the target status from whatever we dropped on
+    let targetStatus: TaskStatus | undefined;
+    if (isGroup) {
+      targetStatus = (target as TaskGroup).status;
+    } else if (isItem) {
+      targetStatus = ((target as TaskItem).note.frontmatter.status as TaskStatus) ?? 'inbox';
+    }
+    if (!targetStatus) { return; }
+
+    // ── Change status for any tasks moving between groups ──
+    for (const filePath of draggedPaths) {
+      const note = await this.manager.readNote(filePath);
+      const oldStatus = note.frontmatter.status ?? 'inbox';
+      if (oldStatus !== targetStatus) {
+        note.frontmatter.status = targetStatus;
         note.frontmatter.modified = new Date().toISOString();
         await this.manager.writeNote(filePath, note.frontmatter, note.body);
-        this.onTaskDropped?.(filePath, `${oldStatus} → ${newStatus}`);
+        this.onTaskDropped?.(filePath, `${oldStatus} → ${targetStatus}`);
       }
-      this.refresh();
-      return;
     }
 
-    // ── Drop on a task item → reorder within the same group ──
-    if (target instanceof TaskItem) {
-      const targetStatus = (target.note.frontmatter.status as TaskStatus) ?? 'inbox';
+    // ── Reorder if dropped on a specific task item ──
+    if (isItem) {
+      const taskTarget = target as TaskItem;
       const groupTasks = this.cache.get(targetStatus);
-      if (!groupTasks) return;
+      if (groupTasks) {
+        const draggedSet = new Set(draggedPaths);
 
-      // Only reorder tasks that share the same status group as the target
-      const validPaths = new Set<string>();
-      for (const dp of draggedPaths) {
-        const note = await this.manager.readNote(dp);
-        const dpStatus = (note.frontmatter.status as TaskStatus) ?? 'inbox';
-        if (dpStatus === targetStatus) {
-          validPaths.add(dp);
-        } else {
-          // Different group — treat as a status change instead
-          note.frontmatter.status = targetStatus;
-          note.frontmatter.modified = new Date().toISOString();
-          await this.manager.writeNote(dp, note.frontmatter, note.body);
-          this.onTaskDropped?.(dp, `${dpStatus} → ${targetStatus}`);
-          validPaths.add(dp);
-        }
-      }
+        // Build the new order: remove dragged items, insert before target
+        const ordered = groupTasks.filter(t => !draggedSet.has(t.path));
+        const targetIdx = ordered.findIndex(t => t.path === taskTarget.note.path);
+        const insertIdx = targetIdx >= 0 ? targetIdx : ordered.length;
 
-      // Build the new order: remove dragged items, insert before target
-      const ordered = groupTasks.filter(t => !validPaths.has(t.path));
-      const targetIdx = ordered.findIndex(t => t.path === target.note.path);
-      const insertIdx = targetIdx >= 0 ? targetIdx : ordered.length;
-
-      // Read fresh copies of dragged tasks
-      const draggedNotes: ParsedNote[] = [];
-      for (const dp of draggedPaths) {
-        if (validPaths.has(dp)) {
+        // Read fresh copies of dragged tasks
+        const draggedNotes: ParsedNote[] = [];
+        for (const dp of draggedPaths) {
           draggedNotes.push(await this.manager.readNote(dp));
         }
-      }
-      ordered.splice(insertIdx, 0, ...draggedNotes);
+        ordered.splice(insertIdx, 0, ...draggedNotes);
 
-      // Write sort-order to frontmatter (10, 20, 30… — gaps for future manual inserts)
-      for (let i = 0; i < ordered.length; i++) {
-        const note = ordered[i];
-        const newOrder = (i + 1) * 10;
-        const currentOrder = note.frontmatter['sort-order'];
-        if (currentOrder !== newOrder) {
-          note.frontmatter['sort-order'] = newOrder;
-          note.frontmatter.modified = new Date().toISOString();
-          await this.manager.writeNote(note.path, note.frontmatter, note.body);
+        // Write sort-order to frontmatter (10, 20, 30… — gaps for future manual inserts)
+        for (let i = 0; i < ordered.length; i++) {
+          const note = ordered[i];
+          const newOrder = (i + 1) * 10;
+          const currentOrder = note.frontmatter['sort-order'];
+          if (currentOrder !== newOrder) {
+            note.frontmatter['sort-order'] = newOrder;
+            note.frontmatter.modified = new Date().toISOString();
+            await this.manager.writeNote(note.path, note.frontmatter, note.body);
+          }
         }
       }
-
-      this.refresh();
     }
+
+    // Refresh tree, then refresh again after a tick to defeat any debouncing
+    this.refresh();
+    setTimeout(() => this.refresh(), 100);
   }
 
   // ── Tree data ──────────────────────────────────────────────────────────────
 
   getTreeItem(element: TaskTreeItem): vscode.TreeItem {
-    if (element instanceof TaskGroup) {
+    if (element.kind === 'group') {
       const count = element.tasks.length;
       const label = `${GTD_LISTS[element.status]} (${count})`;
       // Expand groups with tasks, collapse empty ones (they're still visible as drop targets)
@@ -334,7 +333,7 @@ export class TaskTreeProvider implements vscode.TreeDataProvider<TaskTreeItem>,
         .map(s => new TaskGroup(s, this.cache.get(s)!));
     }
 
-    if (element instanceof TaskGroup) {
+    if (element.kind === 'group') {
       return element.tasks.map(t => new TaskItem(t));
     }
 

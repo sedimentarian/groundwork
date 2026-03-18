@@ -92,7 +92,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
   // Checkbox click → mark done (checked) or pick a new status (unchecked)
   tasksView.onDidChangeCheckboxState(async e => {
     for (const [element, state] of e.items) {
-      if (!(element instanceof TaskItem)) continue;
+      if (!('kind' in element && element.kind === 'item')) continue;
       const note = await manager.readNote(element.note.path);
       const previousStatus = note.frontmatter.status ?? 'inbox';
 
@@ -489,7 +489,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
       let filePath: string | undefined;
       let displayName: string | undefined;
 
-      if (item instanceof TaskItem) {
+      if (item && 'kind' in item && item.kind === 'item') {
         filePath = item.note.path;
         displayName = item.note.frontmatter.title ?? path.basename(filePath);
       } else if (item && 'path' in item) {
