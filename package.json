@@ -388,7 +388,6 @@
     "vitest": "^4.1.0"
   },
   "dependencies": {
-    "easymde": "^2.20.0",
     "marked": "^17.0.4",
     "turndown": "^7.2.2"
   }
