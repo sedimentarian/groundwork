@@ -522,6 +522,53 @@ export async function activate(ctx: vscode.ExtensionContext) {
       await moveNote(note, 'workspace');
     }),
 
+    // Rename — works for both tasks and vault files (right-click or F2)
+    vscode.commands.registerCommand('groundwork.renameNote', async (item?: any) => {
+      const note = await resolveNote(item);
+      if (!note) { vscode.window.showWarningMessage('Select a file to rename.'); return; }
+
+      const oldTitle = note.frontmatter.title ?? path.basename(note.path, '.md');
+      const newTitle = await vscode.window.showInputBox({
+        prompt: 'Rename',
+        value: oldTitle,
+        validateInput: (v) => v.trim() ? null : 'Title cannot be empty',
+      });
+      if (!newTitle || newTitle === oldTitle) return;
+
+      const oldSlug = path.basename(note.path, '.md');
+      const newSlug = newTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      const dir = path.dirname(note.path);
+
+      // Update frontmatter
+      note.frontmatter.title = newTitle;
+      note.frontmatter.modified = new Date().toISOString();
+
+      if (newSlug === oldSlug) {
+        // Same slug — just update frontmatter in place
+        await manager.writeNote(note.path, note.frontmatter, note.body);
+      } else {
+        // Different slug — write to new path, delete old
+        const store = manager.storeFor(note.source) ?? manager.globalStore;
+        const newPath = await store.findAvailablePath(dir, newSlug);
+        await manager.writeNote(newPath, note.frontmatter, note.body);
+        await manager.delete(note.path);
+
+        // Notify if collision caused a different filename
+        const actualSlug = path.basename(newPath, '.md');
+        if (actualSlug !== newSlug) {
+          vscode.window.showInformationMessage(`Renamed to ${actualSlug}.md (name already existed)`);
+        }
+
+        await sessionTracker.log({
+          action: 'rename' as any,
+          file: newPath,
+          detail: `${oldTitle} → ${newTitle}`,
+        });
+      }
+
+      refreshAll();
+    }),
+
     // Quick Context — one click: copies Active + Next tasks to clipboard, ready to paste into any AI tool
     vscode.commands.registerCommand('groundwork.compileActiveContext', async () => {
       const compiled = await contextGen.compileActiveContext();

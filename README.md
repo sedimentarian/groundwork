@@ -318,7 +318,7 @@ All available via Command Palette (`Cmd+Shift+P`) prefixed with `Groundwork:`.
 | Command | Description |
 |---|---|
 | Daily Briefing | AI-powered daily overview |
-| Weekly Review | Guided GTD review: waiting → active → someday → inbox → done → capture |
+| Weekly Review | Full-week overview panel with stats, categorized sections, and inline status actions |
 | New Task | Create a task |
 | New Note | Create a note (blank, template, or AI-generated) |
 | Open in WYSIWYG Editor | Open a vault file in the rich editor |
@@ -337,6 +337,7 @@ All available via Command Palette (`Cmd+Shift+P`) prefixed with `Groundwork:`.
 | Clear Filters | Remove all active filters |
 | Log Activity | Add a timestamped note |
 | Refresh | Reload sidebar |
+| Rename | Rename a note or task (updates title and filename). Right-click or F2 |
 | Delete Note | Permanently delete a vault file |
 
 ---

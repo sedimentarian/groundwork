@@ -139,6 +139,16 @@ move to a different directory (the extension manages this, but for CLI use the
 file can stay in its current directory — status is determined by frontmatter,
 not folder location).
 
+### Rename a task or note
+
+To rename, update both the frontmatter `title` and the filename:
+
+1. Read the file and update `title` in frontmatter
+2. Update `modified` timestamp
+3. Derive the new filename slug: lowercase, replace non-alphanum with hyphens, trim, append `.md`
+4. If the slug changed, write the updated content to the new filename (same directory) and delete the old file
+5. If the slug is the same (e.g., just a casing change), overwrite in place
+
 ### Capture a quick idea
 
 When the user says something like "remind me to..." or "I should...", create an

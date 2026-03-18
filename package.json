@@ -204,6 +204,12 @@
         "title": "Groundwork: Expand All Vault",
         "shortTitle": "Expand All",
         "icon": "$(expand-all)"
+      },
+      {
+        "command": "groundwork.renameNote",
+        "title": "Groundwork: Rename",
+        "shortTitle": "Rename",
+        "icon": "$(edit)"
       }
     ],
     "viewsContainers": {
@@ -351,6 +357,11 @@
           "group": "2_move@1"
         },
         {
+          "command": "groundwork.renameNote",
+          "when": "viewItem =~ /^vault-file/ || viewItem =~ /^task-item/",
+          "group": "2_move@2"
+        },
+        {
           "command": "groundwork.deleteNote",
           "when": "viewItem =~ /^vault-file/ || viewItem =~ /^task-item/",
           "group": "3_delete@1"
@@ -392,6 +403,11 @@
         "command": "groundwork.logActivity",
         "key": "cmd+shift+g cmd+shift+l",
         "linux": "ctrl+shift+g ctrl+shift+l"
+      },
+      {
+        "command": "groundwork.renameNote",
+        "key": "f2",
+        "when": "focusedView == groundwork.tasks || focusedView == groundwork.vault"
       }
     ],
     "configuration": {
