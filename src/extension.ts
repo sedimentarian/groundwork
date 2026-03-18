@@ -732,22 +732,32 @@ export async function activate(ctx: vscode.ExtensionContext) {
     }),
 
     // Collapse/Expand All — Tasks
-    vscode.commands.registerCommand('groundwork.collapseAllTasks', () => {
-      taskTree.setCollapsed(true);
+    // Uses VS Code's real tree collapse (list.collapseAll) and reveal(expand) APIs
+    // because TreeItemCollapsibleState in getTreeItem is only a hint for initial render.
+    vscode.commands.registerCommand('groundwork.collapseAllTasks', async () => {
+      await vscode.commands.executeCommand('groundwork.tasks.focus');
+      await vscode.commands.executeCommand('list.collapseAll');
       vscode.commands.executeCommand('setContext', 'groundwork.tasksCollapsed', true);
     }),
-    vscode.commands.registerCommand('groundwork.expandAllTasks', () => {
-      taskTree.setCollapsed(false);
+    vscode.commands.registerCommand('groundwork.expandAllTasks', async () => {
+      const groups = await taskTree.getChildren();
+      for (const group of groups) {
+        try { await tasksView.reveal(group, { expand: true }); } catch { /* skip */ }
+      }
       vscode.commands.executeCommand('setContext', 'groundwork.tasksCollapsed', false);
     }),
 
     // Collapse/Expand All — Vault
-    vscode.commands.registerCommand('groundwork.collapseAllVault', () => {
-      vaultTree.setCollapsed(true);
+    vscode.commands.registerCommand('groundwork.collapseAllVault', async () => {
+      await vscode.commands.executeCommand('groundwork.vault.focus');
+      await vscode.commands.executeCommand('list.collapseAll');
       vscode.commands.executeCommand('setContext', 'groundwork.vaultCollapsed', true);
     }),
-    vscode.commands.registerCommand('groundwork.expandAllVault', () => {
-      vaultTree.setCollapsed(false);
+    vscode.commands.registerCommand('groundwork.expandAllVault', async () => {
+      const roots = await vaultTree.getChildren();
+      for (const root of roots) {
+        try { await vaultView.reveal(root, { expand: 2 }); } catch { /* skip */ }
+      }
       vscode.commands.executeCommand('setContext', 'groundwork.vaultCollapsed', false);
     }),
 

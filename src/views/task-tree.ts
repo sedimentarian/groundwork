@@ -319,6 +319,14 @@ export class TaskTreeProvider implements vscode.TreeDataProvider<TaskTreeItem>,
     return item;
   }
 
+  // getParent is required for treeView.reveal() to work (used by expand all)
+  getParent(element: TaskTreeItem): TaskTreeItem | undefined {
+    // Groups are top-level — no parent
+    // Items belong to a group, but reveal() only needs parents for non-root elements.
+    // Since we only reveal groups (for expand-all), returning undefined is sufficient.
+    return undefined;
+  }
+
   async getChildren(element?: TaskTreeItem): Promise<TaskTreeItem[]> {
     if (!element) {
       let allTasks = await this.manager.queryNotes({ type: 'task' });

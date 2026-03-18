@@ -242,6 +242,13 @@ export class VaultTreeProvider implements vscode.TreeDataProvider<VaultTreeItem>
     return item;
   }
 
+  // getParent is required for treeView.reveal() to work (used by expand all)
+  getParent(element: VaultTreeItem): VaultTreeItem | undefined {
+    // Roots are top-level — no parent.
+    // We only call reveal() on roots (for expand-all), so undefined is sufficient.
+    return undefined;
+  }
+
   async getChildren(element?: VaultTreeItem): Promise<VaultTreeItem[]> {
     if (!element) {
       // If any filter is active, return flat filtered results
