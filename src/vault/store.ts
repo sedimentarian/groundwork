@@ -263,7 +263,11 @@ export function parseFrontmatter(raw: string): { frontmatter: NoteFrontmatter; b
       const items = raw_val.slice(1, -1).split(',').map(s => s.trim().replace(/^["']|["']$/g, ''));
       (frontmatter as Record<string, unknown>)[key] = items;
     } else {
-      (frontmatter as Record<string, unknown>)[key] = raw_val;
+      // Coerce numeric-looking values to numbers (e.g., sort-order: 10)
+      const num = Number(raw_val);
+      (frontmatter as Record<string, unknown>)[key] = raw_val !== '' && !isNaN(num) && String(num) === raw_val
+        ? num
+        : raw_val;
     }
   }
 

@@ -100,14 +100,8 @@ any → cancelled
 ### List tasks
 
 Read all `.md` files from the vault directories. Parse frontmatter to filter
-by status, priority, project, or tags.
-
-```bash
-# Quick view of all tasks — use Glob + Read tools instead of bash when possible
-```
-
-Prefer using the **Glob** tool to find files and **Read** tool to parse them.
-Group results by status when presenting to the user.
+by status, priority, project, or tags. Use file search and read tools to find
+and parse vault files. Group results by status when presenting to the user.
 
 ### Create a task
 
@@ -148,7 +142,7 @@ When the user says something like "remind me to..." or "I should...", create an
 inbox task immediately. Keep the bar low — capturing fast matters more than
 perfect formatting.
 
-### Daily Briefing (`/brief`)
+### Daily Briefing
 
 Compile a summary of the user's current state. Read all task files and present:
 
@@ -197,9 +191,9 @@ The vault supports several filtering dimensions when querying tasks:
 
 Multiple filters can be combined simultaneously.
 
-For CLI/tool use: use the **Grep** tool to search across vault files for keywords,
-then **Read** the matching files to present results with context. For structured
-filtering, parse frontmatter from all task files and filter in memory.
+Search across vault files for keywords, then read matching files to present
+results with context. For structured filtering, parse frontmatter from all
+task files and filter in memory.
 
 ## Session Tracking
 

@@ -348,8 +348,10 @@ const PRIORITY_RANK: Record<string, number> = { high: 0, medium: 1, low: 2 };
 
 function sortTasks(a: ParsedNote, b: ParsedNote): number {
   // First: sort-order (if both have it)
-  const aOrder = typeof a.frontmatter['sort-order'] === 'number' ? a.frontmatter['sort-order'] as number : Infinity;
-  const bOrder = typeof b.frontmatter['sort-order'] === 'number' ? b.frontmatter['sort-order'] as number : Infinity;
+  const aRaw = a.frontmatter['sort-order'];
+  const aOrder = typeof aRaw === 'number' ? aRaw : (typeof aRaw === 'string' && aRaw !== '' ? Number(aRaw) || Infinity : Infinity);
+  const bRaw = b.frontmatter['sort-order'];
+  const bOrder = typeof bRaw === 'number' ? bRaw : (typeof bRaw === 'string' && bRaw !== '' ? Number(bRaw) || Infinity : Infinity);
   if (aOrder !== bOrder) return aOrder - bOrder;
 
   // Then: priority (high first)

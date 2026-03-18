@@ -130,7 +130,7 @@ sort-order: 10
     const { frontmatter } = parseFrontmatter(raw);
     expect(frontmatter['recurrence']).toBe('every monday');
     expect(frontmatter['recurrence-anchor']).toBe('2026-03-17');
-    expect(frontmatter['sort-order']).toBe('10');
+    expect(frontmatter['sort-order']).toBe(10);
   });
 });
 

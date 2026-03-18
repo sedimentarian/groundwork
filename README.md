@@ -271,6 +271,27 @@ _Generated 2026-03-15T14:30_
 
 On workspace open, Groundwork checks if your AI files are older than your vault. If so, it suggests regenerating.
 
+### AI Skills
+
+Groundwork ships with **agent skills** that teach AI tools how to interact with your vault directly — creating tasks, running briefings, triaging inbox, and more — all from the CLI without needing the VS Code extension UI.
+
+| Tool | Skill Location | Auto-loaded? |
+|---|---|---|
+| **Claude Code** | `.claude/skills/groundwork/SKILL.md` | Yes — Claude discovers it automatically |
+| **GitHub Copilot** | `.github/skills/groundwork/SKILL.md` | Yes — Copilot discovers it automatically |
+
+Both skills teach the AI to:
+- Read and write vault files (frontmatter + markdown body)
+- Create, update, and triage tasks using GTD status flow
+- Run daily briefings and weekly reviews
+- Search and filter by tag, context, project, or text
+- Compile context for other AI tools
+- Capture quick ideas directly to inbox
+
+The skills use the [Agent Skills](https://agentskills.io) open standard, so they work with any compatible AI tool.
+
+> **Tip:** The skills work alongside the generated files (`CLAUDE.md`, `copilot-instructions.md`). Generated files provide *read-only context* about your current work. Skills provide *read-write capability* to interact with the vault.
+
 ---
 
 ## Session Tracking
