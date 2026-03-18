@@ -20,8 +20,11 @@ full read/write access to the vault — no VS Code extension needed.
 - **Global vault**: `~/.groundwork/` — available everywhere
 - **Workspace vault**: `.groundwork/` in the current project root — project-specific
 
-Always check both locations. The global vault is the primary one. Workspace vaults
-are optional and project-scoped.
+**IMPORTANT: Always search BOTH vaults when listing, querying, or counting tasks.**
+Use Glob to find files in both `~/.groundwork/` and `.groundwork/` (relative to the
+workspace root). The workspace vault may not exist — that's fine, just skip it if the
+directory isn't there. When presenting results, include tasks from both vaults and
+note which vault each task comes from (global 🌐 or workspace 📂).
 
 ## Directory Structure
 
