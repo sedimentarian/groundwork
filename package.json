@@ -162,6 +162,24 @@
         "title": "Groundwork: Clear Filters",
         "shortTitle": "Clear Filters",
         "icon": "$(close)"
+      },
+      {
+        "command": "groundwork.searchVault",
+        "title": "Groundwork: Search Vault",
+        "shortTitle": "Search Vault",
+        "icon": "$(search)"
+      },
+      {
+        "command": "groundwork.clearVaultSearch",
+        "title": "Groundwork: Clear Vault Search",
+        "shortTitle": "Clear Search",
+        "icon": "$(close)"
+      },
+      {
+        "command": "groundwork.filterVaultByType",
+        "title": "Groundwork: Filter Vault by Type",
+        "shortTitle": "Filter by Type",
+        "icon": "$(filter)"
       }
     ],
     "viewsContainers": {
@@ -202,9 +220,24 @@
           "group": "navigation@1"
         },
         {
-          "command": "groundwork.initWorkspace",
+          "command": "groundwork.searchVault",
           "when": "view == groundwork.vault",
           "group": "navigation@2"
+        },
+        {
+          "command": "groundwork.filterVaultByType",
+          "when": "view == groundwork.vault",
+          "group": "navigation@3"
+        },
+        {
+          "command": "groundwork.clearVaultSearch",
+          "when": "view == groundwork.vault && groundwork.vaultSearchActive",
+          "group": "navigation@4"
+        },
+        {
+          "command": "groundwork.initWorkspace",
+          "when": "view == groundwork.vault",
+          "group": "navigation@5"
         },
         {
           "command": "groundwork.compileActiveContext",

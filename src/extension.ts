@@ -126,9 +126,22 @@ export async function activate(ctx: vscode.ExtensionContext) {
     sessionTree.refresh();
   });
 
+  // Vault tree view — createTreeView for drag-and-drop support
+  const vaultView = vscode.window.createTreeView('groundwork.vault', {
+    treeDataProvider: vaultTree,
+    dragAndDropController: vaultTree,
+    showCollapseAll: true,
+    canSelectMany: false,
+  });
+
+  // When a vault file is moved via drag-and-drop, log the session event
+  vaultTree.onFileMoved = async (filePath: string, detail: string) => {
+    await sessionTracker.log({ action: 'status_change', file: filePath, detail });
+  };
+
   ctx.subscriptions.push(
     tasksView,
-    vscode.window.registerTreeDataProvider('groundwork.vault', vaultTree),
+    vaultView,
     vscode.window.registerTreeDataProvider('groundwork.sessions', sessionTree),
   );
 
@@ -684,6 +697,61 @@ export async function activate(ctx: vscode.ExtensionContext) {
     // Weekly Review — guided GTD review wizard
     vscode.commands.registerCommand('groundwork.weeklyReview', async () => {
       await runWeeklyReview(manager, sessionTracker, refreshAll);
+    }),
+
+    // Search Vault — full-text search across vault notes
+    vscode.commands.registerCommand('groundwork.searchVault', async () => {
+      const current = vaultTree.searchQuery;
+      const query = await vscode.window.showInputBox({
+        prompt: 'Search vault notes (title, body, tags, type)',
+        placeHolder: 'Type to search…',
+        value: current ?? '',
+      });
+      if (query === undefined) return; // cancelled
+      if (query === '') {
+        vaultTree.clearSearch();
+      } else {
+        vaultTree.setSearch(query);
+      }
+      vscode.commands.executeCommand('setContext', 'groundwork.vaultSearchActive', vaultTree.hasActiveSearch);
+      vaultView.message = vaultTree.hasActiveSearch ? `Search: "${vaultTree.searchQuery}"` : undefined;
+    }),
+
+    // Clear Vault Search
+    vscode.commands.registerCommand('groundwork.clearVaultSearch', () => {
+      vaultTree.clearSearch();
+      vscode.commands.executeCommand('setContext', 'groundwork.vaultSearchActive', false);
+      vaultView.message = undefined;
+    }),
+
+    // Filter Vault by Type — quick filter for notes, references, projects, logs
+    vscode.commands.registerCommand('groundwork.filterVaultByType', async () => {
+      const types = [
+        { label: '$(note) Notes', value: 'note' },
+        { label: '$(book) References', value: 'reference' },
+        { label: '$(project) Projects', value: 'project' },
+        { label: '$(output) Logs', value: 'log' },
+      ];
+
+      if (vaultTree.hasActiveSearch) {
+        types.unshift({ label: '$(close) Clear Filter', value: '' });
+      }
+
+      const picked = await vscode.window.showQuickPick(types, {
+        placeHolder: 'Filter vault by note type',
+      });
+      if (!picked) return;
+
+      if (picked.value === '') {
+        vaultTree.clearSearch();
+        vscode.commands.executeCommand('setContext', 'groundwork.vaultSearchActive', false);
+        vaultView.message = undefined;
+      } else {
+        // Use the type as a search query — the search implementation checks type field
+        vaultTree.setSearch(picked.value);
+        vscode.commands.executeCommand('setContext', 'groundwork.vaultSearchActive', true);
+        vaultView.message = `Type: ${picked.label.replace(/\$\([^)]+\)\s*/, '')}`;
+      }
     }),
 
     // Log Activity

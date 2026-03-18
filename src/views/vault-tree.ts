@@ -3,8 +3,11 @@ import * as path from 'path';
 import { VaultManager } from '../vault/manager';
 import { VaultFile, VaultScope } from '../vault/types';
 
+const VAULT_MIME = 'application/vnd.groundwork.vault-file';
+
 /** A root node representing a vault scope */
 class VaultRoot {
+  readonly kind = 'vault-root' as const;
   constructor(
     public readonly scope: VaultScope,
     public readonly label: string,
@@ -14,18 +17,116 @@ class VaultRoot {
 
 type VaultTreeItem = VaultRoot | VaultFile;
 
-export class VaultTreeProvider implements vscode.TreeDataProvider<VaultTreeItem> {
+export class VaultTreeProvider implements vscode.TreeDataProvider<VaultTreeItem>,
+  vscode.TreeDragAndDropController<VaultTreeItem> {
+
+  // Drag-and-drop support
+  readonly dragMimeTypes = [VAULT_MIME];
+  readonly dropMimeTypes = [VAULT_MIME];
+
   private _onDidChangeTreeData = new vscode.EventEmitter<VaultTreeItem | undefined>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
+  private _searchQuery: string | undefined;
+
+  /** Callback when a file is moved via drag-and-drop */
+  onFileMoved?: (filePath: string, detail: string) => void;
+
   constructor(private manager: VaultManager) {}
+
+  // ── Search ───────────────────────────────────────────────────────────────────
+
+  get searchQuery(): string | undefined {
+    return this._searchQuery;
+  }
+
+  get hasActiveSearch(): boolean {
+    return !!this._searchQuery;
+  }
+
+  setSearch(query: string | undefined): void {
+    this._searchQuery = query;
+    this._onDidChangeTreeData.fire(undefined);
+  }
+
+  clearSearch(): void {
+    this._searchQuery = undefined;
+    this._onDidChangeTreeData.fire(undefined);
+  }
 
   refresh(): void {
     this._onDidChangeTreeData.fire(undefined);
   }
 
+  // ── Drag and drop ─────────────────────────────────────────────────────────
+
+  handleDrag(source: readonly VaultTreeItem[], dataTransfer: vscode.DataTransfer): void {
+    // Only files can be dragged, not roots or directories
+    const files = source.filter((s): s is VaultFile => !('kind' in s) && !s.isDirectory);
+    if (files.length === 0) return;
+    dataTransfer.set(VAULT_MIME, new vscode.DataTransferItem(
+      files.map(f => ({ path: f.path, source: f.source }))
+    ));
+  }
+
+  async handleDrop(target: VaultTreeItem | undefined, dataTransfer: vscode.DataTransfer): Promise<void> {
+    const item = dataTransfer.get(VAULT_MIME);
+    if (!item) return;
+    const draggedFiles: { path: string; source: VaultScope }[] = item.value;
+    if (!draggedFiles || draggedFiles.length === 0) return;
+    if (!target) return;
+
+    // Determine target directory
+    let targetDir: string | undefined;
+    let targetScope: VaultScope | undefined;
+
+    if ('kind' in target && target.kind === 'vault-root') {
+      // Dropped on vault root — move to root of that vault
+      targetDir = target.rootDir;
+      targetScope = target.scope;
+    } else if ('isDirectory' in target && target.isDirectory) {
+      // Dropped on a directory
+      targetDir = target.path;
+      targetScope = target.source;
+    } else if ('isDirectory' in target && !target.isDirectory) {
+      // Dropped on a file — use parent directory
+      targetDir = path.dirname(target.path);
+      targetScope = target.source;
+    }
+
+    if (!targetDir || !targetScope) return;
+
+    for (const dragged of draggedFiles) {
+      const fileName = path.basename(dragged.path);
+      const newPath = path.join(targetDir, fileName);
+
+      // Skip if already in the right place
+      if (dragged.path === newPath) continue;
+
+      const sourceScope = dragged.source;
+
+      if (sourceScope === targetScope) {
+        // Same vault — just rename/move the file
+        const store = this.manager.storeFor(sourceScope);
+        if (!store) continue;
+        await store.rename(dragged.path, newPath);
+        this.onFileMoved?.(dragged.path, `moved to ${path.relative(store.rootDir, targetDir)}`);
+      } else {
+        // Cross-vault move — read, write to new location, delete old
+        const note = await this.manager.readNote(dragged.path);
+        await this.manager.writeNote(newPath, note.frontmatter, note.body);
+        await this.manager.delete(dragged.path);
+        this.onFileMoved?.(dragged.path, `moved ${sourceScope} → ${targetScope}`);
+      }
+    }
+
+    this.refresh();
+  }
+
+  // ── Tree data ──────────────────────────────────────────────────────────────
+
   getTreeItem(element: VaultTreeItem): vscode.TreeItem {
-    if (element instanceof VaultRoot) {
+    if ('kind' in element && element.kind === 'vault-root') {
       const icon = element.scope === 'global' ? 'globe' : 'folder-library';
       const label = element.scope === 'global' ? '🌐 Global Vault' : '📂 Workspace Vault';
       const item = new vscode.TreeItem(
@@ -91,6 +192,11 @@ export class VaultTreeProvider implements vscode.TreeDataProvider<VaultTreeItem>
 
   async getChildren(element?: VaultTreeItem): Promise<VaultTreeItem[]> {
     if (!element) {
+      // If search is active, return flat search results grouped by scope
+      if (this._searchQuery) {
+        return this.getSearchResults(this._searchQuery);
+      }
+
       // Root level: show scope roots
       const roots: VaultTreeItem[] = [];
       if (this.manager.workspaceStore) {
@@ -100,7 +206,7 @@ export class VaultTreeProvider implements vscode.TreeDataProvider<VaultTreeItem>
       return roots;
     }
 
-    if (element instanceof VaultRoot) {
+    if ('kind' in element && element.kind === 'vault-root') {
       const store = this.manager.storeFor(element.scope);
       if (!store) return [];
       try {
@@ -118,6 +224,39 @@ export class VaultTreeProvider implements vscode.TreeDataProvider<VaultTreeItem>
     }
 
     return [];
+  }
+
+  // ── Search implementation ──────────────────────────────────────────────────
+
+  private async getSearchResults(query: string): Promise<VaultTreeItem[]> {
+    const lowerQuery = query.toLowerCase();
+
+    // Get all non-task notes from both vaults
+    const allNotes = await this.manager.queryNotes({});
+    const nonTaskNotes = allNotes.filter(n => n.frontmatter.type !== 'task');
+
+    // Search across title, body, tags, and type
+    const matches = nonTaskNotes.filter(note => {
+      const title = (note.frontmatter.title ?? '').toLowerCase();
+      const body = note.body.toLowerCase();
+      const tags = Array.isArray(note.frontmatter.tags) ? note.frontmatter.tags.join(' ').toLowerCase() : '';
+      const type = (note.frontmatter.type ?? '').toLowerCase();
+      const project = (note.frontmatter.project ?? '').toLowerCase();
+      return title.includes(lowerQuery) || body.includes(lowerQuery) ||
+             tags.includes(lowerQuery) || type.includes(lowerQuery) ||
+             project.includes(lowerQuery);
+    });
+
+    // Convert to VaultFile items for display
+    return matches.map(note => ({
+      path: note.path,
+      relativePath: note.relativePath,
+      name: path.basename(note.path),
+      isDirectory: false,
+      source: note.source,
+      title: note.frontmatter.title,
+      noteType: note.frontmatter.type,
+    } as VaultFile));
   }
 }
 
