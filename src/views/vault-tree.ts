@@ -34,7 +34,6 @@ export class VaultTreeProvider implements vscode.TreeDataProvider<VaultTreeItem>
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
   private _filter: VaultFilter = {};
-  private _allCollapsed = false;
 
   /** Callback when a file is moved via drag-and-drop */
   onFileMoved?: (filePath: string, detail: string) => void;
@@ -72,17 +71,6 @@ export class VaultTreeProvider implements vscode.TreeDataProvider<VaultTreeItem>
     if (this._filter.tag) parts.push(`tag: ${this._filter.tag}`);
     if (this._filter.search) parts.push(`"${this._filter.search}"`);
     return parts.join(' · ');
-  }
-
-  // ── Collapse / Expand ────────────────────────────────────────────────────────
-
-  get allCollapsed(): boolean {
-    return this._allCollapsed;
-  }
-
-  setCollapsed(collapsed: boolean): void {
-    this._allCollapsed = collapsed;
-    this._onDidChangeTreeData.fire(undefined);
   }
 
   // ── Data helpers ─────────────────────────────────────────────────────────────
@@ -178,9 +166,7 @@ export class VaultTreeProvider implements vscode.TreeDataProvider<VaultTreeItem>
       const label = element.scope === 'global' ? '🌐 Global Vault' : '📂 Workspace Vault';
       const item = new vscode.TreeItem(
         label,
-        this._allCollapsed
-          ? vscode.TreeItemCollapsibleState.Collapsed
-          : vscode.TreeItemCollapsibleState.Expanded
+        vscode.TreeItemCollapsibleState.Expanded
       );
       item.iconPath = new vscode.ThemeIcon(icon);
       item.contextValue = `vault-root-${element.scope}`;
@@ -194,9 +180,7 @@ export class VaultTreeProvider implements vscode.TreeDataProvider<VaultTreeItem>
       ? file.name
       : (file.title ?? slugToTitle(file.name.replace(/\.md$/, '')));
 
-    const dirState = this._allCollapsed
-      ? vscode.TreeItemCollapsibleState.Collapsed
-      : vscode.TreeItemCollapsibleState.Collapsed; // dirs start collapsed by default, roots handle expand
+    const dirState = vscode.TreeItemCollapsibleState.Collapsed;
     const item = new vscode.TreeItem(
       displayName,
       file.isDirectory

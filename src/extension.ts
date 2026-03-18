@@ -12,13 +12,14 @@ import { checkStaleness } from './vault/staleness';
 import { EditorPanelManager } from './views/editor-panel';
 import { BriefingPanelManager } from './views/briefing-panel';
 import { pickNoteCreationMethod, pickTaskCreationMethod } from './note-creation';
-import { runWeeklyReview } from './weekly-review';
+import { WeeklyReviewPanelManager } from './weekly-review';
 
 let manager: VaultManager;
 let contextGen: ContextGenerator;
 let sessionTracker: SessionTracker;
 let editorPanels: EditorPanelManager;
 let briefingPanel: BriefingPanelManager;
+let weeklyReviewPanel: WeeklyReviewPanelManager;
 
 export async function activate(ctx: vscode.ExtensionContext) {
   const config = vscode.workspace.getConfiguration('groundwork');
@@ -78,13 +79,13 @@ export async function activate(ctx: vscode.ExtensionContext) {
 
   editorPanels = new EditorPanelManager(manager, ctx.extensionUri, refreshAll);
   briefingPanel = new BriefingPanelManager(manager, ctx.extensionUri, refreshAll);
+  weeklyReviewPanel = new WeeklyReviewPanelManager(manager, ctx.extensionUri, refreshAll);
 
-  // Tasks tree view — createTreeView (not registerTreeDataProvider) so we can use onDidChangeCheckboxState + drag-and-drop
+  // Tasks tree view — createTreeView (not registerTreeDataProvider) for drag-and-drop support
   const tasksView = vscode.window.createTreeView('groundwork.tasks', {
     treeDataProvider: taskTree,
     dragAndDropController: taskTree,
     showCollapseAll: false,
-    canSelectMany: false,
   });
 
   // When a task is moved via drag-and-drop, log the session event
@@ -92,49 +93,11 @@ export async function activate(ctx: vscode.ExtensionContext) {
     await sessionTracker.log({ action: 'status_change', file: filePath, detail });
   };
 
-  // Checkbox click → mark done (checked) or pick a new status (unchecked)
-  tasksView.onDidChangeCheckboxState(async e => {
-    for (const [element, state] of e.items) {
-      if (!('kind' in element && element.kind === 'item')) continue;
-      const note = await manager.readNote(element.note.path);
-      const previousStatus = note.frontmatter.status ?? 'inbox';
-
-      let newStatus: TaskStatus;
-      if (state === vscode.TreeItemCheckboxState.Checked) {
-        newStatus = 'done';
-      } else {
-        // Unchecking a done/cancelled task → ask where it should go
-        const reopenOptions: TaskStatus[] = ['next', 'inbox', 'active', 'waiting', 'someday'];
-        const picked = await vscode.window.showQuickPick(
-          reopenOptions.map(s => ({ label: GTD_LISTS[s], value: s })),
-          { placeHolder: 'Reopen task as…' }
-        );
-        if (!picked) {
-          // User cancelled — refresh to restore visual checkbox state
-          taskTree.refresh();
-          return;
-        }
-        newStatus = picked.value;
-      }
-
-      note.frontmatter.status = newStatus;
-      await manager.writeNote(element.note.path, note.frontmatter, note.body);
-      await sessionTracker.log({
-        action: 'status_change',
-        file: element.note.path,
-        detail: `${previousStatus} → ${newStatus}`,
-      });
-    }
-    taskTree.refresh();
-    sessionTree.refresh();
-  });
-
   // Vault tree view — createTreeView for drag-and-drop support
   const vaultView = vscode.window.createTreeView('groundwork.vault', {
     treeDataProvider: vaultTree,
     dragAndDropController: vaultTree,
     showCollapseAll: false,
-    canSelectMany: false,
   });
 
   // When a vault file is moved via drag-and-drop, log the session event
@@ -700,9 +663,9 @@ export async function activate(ctx: vscode.ExtensionContext) {
       await briefingPanel.open();
     }),
 
-    // Weekly Review — guided GTD review wizard
+    // Weekly Review — webview panel with full week overview and inline actions
     vscode.commands.registerCommand('groundwork.weeklyReview', async () => {
-      await runWeeklyReview(manager, sessionTracker, refreshAll);
+      await weeklyReviewPanel.open();
     }),
 
     // Filter Vault — unified multi-dimension filter (type, tag, search)
@@ -816,9 +779,10 @@ export async function activate(ctx: vscode.ExtensionContext) {
     origRefreshAll();
     updateStatusBar();
   };
-  // Patch the refreshAll reference used by editor panels and briefing
+  // Patch the refreshAll reference used by editor panels, briefing, and weekly review
   editorPanels = new EditorPanelManager(manager, ctx.extensionUri, refreshAllWithStatus);
   briefingPanel = new BriefingPanelManager(manager, ctx.extensionUri, refreshAllWithStatus);
+  weeklyReviewPanel = new WeeklyReviewPanelManager(manager, ctx.extensionUri, refreshAllWithStatus);
 
   // --- File watcher: pick up external changes (CLI, Claude Code, other editors) ---
   // Debounce to avoid rapid-fire refreshes when many files change at once
