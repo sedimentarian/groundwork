@@ -11,7 +11,7 @@ import { SessionTreeProvider } from './views/session-tree';
 import { checkStaleness } from './vault/staleness';
 import { EditorPanelManager } from './views/editor-panel';
 import { BriefingPanelManager } from './views/briefing-panel';
-import { pickNoteCreationMethod } from './note-creation';
+import { pickNoteCreationMethod, pickTaskCreationMethod } from './note-creation';
 import { runWeeklyReview } from './weekly-review';
 
 let manager: VaultManager;
@@ -371,6 +371,12 @@ export async function activate(ctx: vscode.ExtensionContext) {
       });
       if (!title) return;
 
+      const creation = await pickTaskCreationMethod(
+        title,
+        () => contextGen.compileActiveContext()
+      );
+      if (!creation) return;
+
       const contexts = config.get<string[]>('gtd.contexts') ?? [];
       const selectedContexts = await vscode.window.showQuickPick(contexts, {
         canPickMany: true,
@@ -403,7 +409,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
         project: project || undefined,
         created: new Date().toISOString(),
         priority: 'medium',
-      }, `\n${title}\n\n## Notes\n\n`);
+      }, creation.body);
 
       await sessionTracker.log({ action: 'create', file: filePath });
       refreshAll();

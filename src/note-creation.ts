@@ -190,6 +190,149 @@ export async function pickNoteCreationMethod(
   }
 }
 
+// ── Task creation ──────────────────────────────────────────────────────────
+
+export interface TaskCreationResult {
+  body: string;
+}
+
+/**
+ * Presents the user with task body options: blank or AI-generated.
+ * Returns the task body, or undefined if cancelled.
+ */
+export async function pickTaskCreationMethod(
+  title: string,
+  getActiveContext?: () => Promise<string>
+): Promise<TaskCreationResult | undefined> {
+  const choices = [
+    { label: '✏️  Blank', description: 'Start with an empty task', value: 'blank' as const },
+    { label: '🤖  Generate with AI…', description: 'AI breaks down the task', value: 'ai' as const },
+  ];
+
+  const method = await vscode.window.showQuickPick(choices, {
+    placeHolder: 'How would you like to create this task?',
+  });
+  if (!method) return undefined;
+
+  switch (method.value) {
+    case 'blank':
+      return { body: `\n${title}\n\n## Notes\n\n` };
+
+    case 'ai':
+      return await generateTaskWithAI(title, getActiveContext);
+  }
+}
+
+async function generateTaskWithAI(
+  title: string,
+  getActiveContext?: () => Promise<string>
+): Promise<TaskCreationResult | undefined> {
+  const description = await vscode.window.showInputBox({
+    prompt: 'Any extra context for the AI? (optional — press Enter to skip)',
+    placeHolder: 'e.g., needs to support pagination, deadline is Friday',
+  });
+  // Allow empty string (user pressed Enter with no input)
+  if (description === undefined) return undefined;
+
+  let activeContext: string | undefined;
+  if (getActiveContext) {
+    try {
+      activeContext = await getActiveContext();
+    } catch {
+      // Non-critical
+    }
+  }
+
+  const prompt = buildTaskPrompt(title, description, activeContext);
+
+  // Try VSCode Language Model API
+  const lm = (vscode as any).lm;
+  if (lm && typeof lm.selectChatModels === 'function') {
+    try {
+      let models = await lm.selectChatModels({ family: 'gpt-4o' });
+      if (!models || models.length === 0) {
+        models = await lm.selectChatModels({});
+      }
+      if (models && models.length > 0) {
+        const result = await callLanguageModelForTask(models[0], prompt);
+        if (result) return result;
+      }
+    } catch {
+      // Fall through to clipboard
+    }
+  }
+
+  // Fallback: copy prompt to clipboard
+  await vscode.env.clipboard.writeText(prompt);
+  vscode.window.showInformationMessage(
+    'AI prompt copied to clipboard — paste into Claude or Copilot chat, then paste the result into the editor.'
+  );
+  return {
+    body: `\n${title}\n\n> **Paste AI-generated breakdown here.** The generation prompt is on your clipboard.\n\n`,
+  };
+}
+
+function buildTaskPrompt(title: string, description: string, activeContext?: string): string {
+  let prompt = `Break down this task into a clear, actionable plan in markdown format.
+
+Task: ${title}${description ? `\nAdditional context: ${description}` : ''}
+
+Requirements:
+- Start with a brief one-line summary of what this task involves
+- Add a "## Steps" section with a numbered list of concrete steps
+- Add a "## Acceptance Criteria" section with a bulleted checklist (using - [ ])
+- If relevant, add a "## Notes" section for gotchas, dependencies, or open questions
+- Be specific and practical — avoid vague or generic steps
+- Output ONLY the markdown body — no YAML frontmatter, no wrapping code fences`;
+
+  if (activeContext && !activeContext.includes('No active or next tasks')) {
+    prompt += `
+
+Here is the author's current work context — use it to make the breakdown relevant:
+${activeContext}`;
+  }
+
+  return prompt;
+}
+
+async function callLanguageModelForTask(
+  model: any,
+  prompt: string
+): Promise<TaskCreationResult | undefined> {
+  const LMChatMessage = (vscode as any).LanguageModelChatMessage;
+  if (!LMChatMessage) return undefined;
+
+  const messages = [LMChatMessage.User(prompt)];
+
+  return await vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: 'Generating task breakdown with AI…',
+      cancellable: true,
+    },
+    async (_progress, token) => {
+      try {
+        const response = await model.sendRequest(messages, {}, token);
+        let result = '';
+        for await (const chunk of response.text) {
+          if (token.isCancellationRequested) return undefined;
+          result += chunk;
+        }
+        result = result.replace(/^```(?:markdown|md)?\n/i, '').replace(/\n```\s*$/, '');
+        return { body: '\n' + result.trim() + '\n' };
+      } catch (err: any) {
+        const msg = err?.message ?? String(err);
+        if (msg.includes('denied') || msg.includes('permission') || msg.includes('consent')) {
+          vscode.window.showInformationMessage(
+            'Copilot permission required. Falling back to clipboard prompt.'
+          );
+        }
+        return undefined;
+      }
+    }
+  );
+}
+
 // ── Template picker ─────────────────────────────────────────────────────────
 
 async function pickTemplate(title: string): Promise<NoteCreationResult | undefined> {
