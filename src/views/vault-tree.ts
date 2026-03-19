@@ -195,7 +195,10 @@ export class VaultTreeProvider implements vscode.TreeDataProvider<VaultTreeItem>
         arguments: [vscode.Uri.file(file.path)],
       };
       item.iconPath = new vscode.ThemeIcon(fileIcon(file));
-      item.contextValue = file.source === 'workspace' ? 'vault-file-workspace' : 'vault-file-global';
+      // Detect if file is in the archive/ directory
+      const isArchived = file.relativePath.startsWith('archive' + path.sep) || file.relativePath.startsWith('archive/');
+      const scope = file.source === 'workspace' ? 'workspace' : 'global';
+      item.contextValue = isArchived ? `vault-file-archived-${scope}` : `vault-file-${scope}`;
 
       // Description: scope badge + type label
       const scopeEmoji = file.source === 'workspace' ? '📂' : '🌐';
@@ -274,7 +277,8 @@ export class VaultTreeProvider implements vscode.TreeDataProvider<VaultTreeItem>
   private async getFilteredResults(): Promise<VaultTreeItem[]> {
     // Get all non-task notes from both vaults
     const allNotes = await this.manager.queryNotes({});
-    let results = allNotes.filter(n => n.frontmatter.type !== 'task');
+    let results = allNotes.filter(n => n.frontmatter.type !== 'task' &&
+      !n.relativePath.startsWith('archive/') && !n.relativePath.startsWith('archive' + path.sep));
 
     // Apply type filter
     if (this._filter.type) {
@@ -357,6 +361,7 @@ function dirIcon(name: string): string {
     case 'projects':  return 'project';
     case 'reference': return 'book';
     case 'logs':      return 'output';
+    case 'archive':   return 'archive';
     default:          return 'folder';
   }
 }

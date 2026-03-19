@@ -210,6 +210,18 @@
         "title": "Groundwork: Rename",
         "shortTitle": "Rename",
         "icon": "$(edit)"
+      },
+      {
+        "command": "groundwork.archiveNote",
+        "title": "Groundwork: Archive",
+        "shortTitle": "Archive",
+        "icon": "$(archive)"
+      },
+      {
+        "command": "groundwork.unarchiveNote",
+        "title": "Groundwork: Unarchive",
+        "shortTitle": "Unarchive",
+        "icon": "$(discard)"
       }
     ],
     "viewsContainers": {
@@ -338,7 +350,7 @@
         },
         {
           "command": "groundwork.compileContext",
-          "when": "viewItem =~ /^vault-file/ || viewItem =~ /^task-item/",
+          "when": "viewItem =~ /^vault-file-(global|workspace)$/ || viewItem =~ /^task-item/",
           "group": "1_actions@3"
         },
         {
@@ -348,12 +360,12 @@
         },
         {
           "command": "groundwork.moveToWorkspace",
-          "when": "viewItem == task-item-global || viewItem == vault-file-global",
+          "when": "viewItem =~ /^task-item-global/ || viewItem == vault-file-global",
           "group": "2_move@1"
         },
         {
           "command": "groundwork.moveToGlobal",
-          "when": "viewItem == task-item-workspace || viewItem == vault-file-workspace",
+          "when": "viewItem =~ /^task-item-workspace/ || viewItem == vault-file-workspace",
           "group": "2_move@1"
         },
         {
@@ -362,9 +374,19 @@
           "group": "2_move@2"
         },
         {
-          "command": "groundwork.deleteNote",
-          "when": "viewItem =~ /^vault-file/ || viewItem =~ /^task-item/",
+          "command": "groundwork.archiveNote",
+          "when": "viewItem =~ /^vault-file-(global|workspace)$/",
           "group": "3_delete@1"
+        },
+        {
+          "command": "groundwork.unarchiveNote",
+          "when": "viewItem =~ /^vault-file-archived/",
+          "group": "3_delete@1"
+        },
+        {
+          "command": "groundwork.deleteNote",
+          "when": "viewItem =~ /^vault-file-archived/ || viewItem =~ /^task-item-.+-(done|cancelled)$/",
+          "group": "3_delete@2"
         },
         {
           "command": "groundwork.newNoteHere",

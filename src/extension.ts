@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as os from 'os';
+import * as fs from 'fs';
 import { VaultManager } from './vault/manager';
 import { TaskStatus, GTD_LISTS, VaultScope, ParsedNote } from './vault/types';
 import { ContextGenerator } from './context/generator';
@@ -567,6 +568,52 @@ export async function activate(ctx: vscode.ExtensionContext) {
       }
 
       refreshAll();
+    }),
+
+    // Archive — move a vault file to archive/ (vault files only, not tasks)
+    vscode.commands.registerCommand('groundwork.archiveNote', async (item?: any) => {
+      const note = await resolveNote(item);
+      if (!note) { vscode.window.showWarningMessage('Select a file to archive.'); return; }
+
+      const store = manager.storeFor(note.source) ?? manager.globalStore;
+      const archiveDir = path.join(store.rootDir, 'archive');
+      await fs.promises.mkdir(archiveDir, { recursive: true });
+
+      const fileName = path.basename(note.path);
+      const newPath = await store.findAvailablePath(archiveDir, path.basename(fileName, '.md'));
+      await store.rename(note.path, newPath);
+
+      await sessionTracker.log({
+        action: 'status_change' as any,
+        file: newPath,
+        detail: `archived`,
+      });
+
+      refreshAll();
+      vscode.window.showInformationMessage(`Archived "${note.frontmatter.title ?? fileName}".`);
+    }),
+
+    // Unarchive — move an archived file back to notes/
+    vscode.commands.registerCommand('groundwork.unarchiveNote', async (item?: any) => {
+      const note = await resolveNote(item);
+      if (!note) { vscode.window.showWarningMessage('Select a file to unarchive.'); return; }
+
+      const store = manager.storeFor(note.source) ?? manager.globalStore;
+      const notesDir = path.join(store.rootDir, 'notes');
+      await fs.promises.mkdir(notesDir, { recursive: true });
+
+      const fileName = path.basename(note.path);
+      const newPath = await store.findAvailablePath(notesDir, path.basename(fileName, '.md'));
+      await store.rename(note.path, newPath);
+
+      await sessionTracker.log({
+        action: 'status_change' as any,
+        file: newPath,
+        detail: `unarchived`,
+      });
+
+      refreshAll();
+      vscode.window.showInformationMessage(`Unarchived "${note.frontmatter.title ?? fileName}" to notes/.`);
     }),
 
     // Quick Context — one click: copies Active + Next tasks to clipboard, ready to paste into any AI tool

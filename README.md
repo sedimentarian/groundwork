@@ -338,7 +338,9 @@ All available via Command Palette (`Cmd+Shift+P`) prefixed with `Groundwork:`.
 | Log Activity | Add a timestamped note |
 | Refresh | Reload sidebar |
 | Rename | Rename a note or task (updates title and filename). Right-click or F2 |
-| Delete Note | Permanently delete a vault file |
+| Archive | Move a vault file to `archive/` (safety net before deletion) |
+| Unarchive | Move an archived file back to `notes/` |
+| Delete | Permanently delete an archived vault file or a done/cancelled task |
 
 ---
 

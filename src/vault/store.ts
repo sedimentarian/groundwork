@@ -199,15 +199,17 @@ export class VaultStore {
     }
   }
 
-  private async collectMarkdownFiles(dir: string): Promise<string[]> {
+  private async collectMarkdownFiles(dir: string, opts?: { includeArchive?: boolean }): Promise<string[]> {
     const results: string[] = [];
     const entries = await fs.promises.readdir(dir, { withFileTypes: true });
 
     for (const entry of entries) {
       if (entry.name.startsWith('.')) continue;
+      // Skip archive/ unless explicitly requested
+      if (entry.name === 'archive' && dir === this.rootDir && !opts?.includeArchive) continue;
       const fullPath = path.join(dir, entry.name);
       if (entry.isDirectory()) {
-        results.push(...await this.collectMarkdownFiles(fullPath));
+        results.push(...await this.collectMarkdownFiles(fullPath, opts));
       } else if (entry.name.endsWith('.md')) {
         results.push(fullPath);
       }

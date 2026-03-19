@@ -289,8 +289,10 @@ export class TaskTreeProvider implements vscode.TreeDataProvider<TaskTreeItem>,
       }
     }
 
-    // contextValue encodes scope so move-to-global/move-to-workspace menus show correctly
-    item.contextValue = note.source === 'workspace' ? 'task-item-workspace' : 'task-item-global';
+    // contextValue encodes scope + status so menus can be conditional
+    // Format: task-item-{scope}-{status} e.g. task-item-global-done
+    const status = note.frontmatter.status ?? 'inbox';
+    item.contextValue = `task-item-${note.source === 'workspace' ? 'workspace' : 'global'}-${status}`;
 
     // Rich tooltip — metadata table + body preview
     item.tooltip = buildTooltip(note, title, contextStr);
