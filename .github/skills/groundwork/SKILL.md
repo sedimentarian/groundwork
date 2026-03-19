@@ -106,6 +106,40 @@ Read all `.md` files from the vault directories. Parse frontmatter to filter
 by status, priority, project, or tags. Use file search and read tools to find
 and parse vault files. Group results by status when presenting to the user.
 
+### Task shorthand references
+
+When listing tasks, **always** assign shorthand IDs using a status prefix + number:
+
+| Prefix | Status |
+|--------|--------|
+| `I` | inbox |
+| `N` | next |
+| `A` | active |
+| `W` | waiting |
+| `S` | someday |
+| `D` | done |
+| `C` | cancelled |
+
+**Sort order within each group** (must match the sidebar tree view):
+1. `sort-order` frontmatter field (ascending, lowest first; missing = Infinity)
+2. `priority` (high → medium → low)
+3. `title` alphabetically
+
+**Output format:**
+```
+## Next Actions
+N1. Fix login bug [high, due: 2026-03-20]
+N2. Quick reference shorthand [medium]
+N3. Update API docs [medium]
+```
+
+**Usage rules:**
+- Always output shorthand numbers when listing tasks
+- Accept user references like "mark N1 done", "what's I3?", "move S2 to next"
+- Numbers are ephemeral — recalculate on each listing, don't persist them
+- When a user references a shorthand, resolve it against the most recent listing in the conversation
+- Include both global and workspace vault tasks in a single numbered sequence per status group
+
 ### Create a task
 
 1. Generate a filename slug from the title: lowercase, replace spaces with hyphens,
