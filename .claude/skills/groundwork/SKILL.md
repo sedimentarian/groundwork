@@ -20,11 +20,8 @@ full read/write access to the vault — no VS Code extension needed.
 - **Global vault**: `~/.groundwork/` — available everywhere
 - **Workspace vault**: `.groundwork/` in the current project root — project-specific
 
-**IMPORTANT: Always search BOTH vaults when listing, querying, or counting tasks.**
-Use Glob to find files in both `~/.groundwork/` and `.groundwork/` (relative to the
-workspace root). The workspace vault may not exist — that's fine, just skip it if the
-directory isn't there. When presenting results, include tasks from both vaults and
-note which vault each task comes from (global 🌐 or workspace 📂).
+Always check both locations. The global vault is the primary one. Workspace vaults
+are optional and project-scoped.
 
 ## Directory Structure
 
@@ -76,9 +73,6 @@ helps describe the task or note.
 | `modified` | no | ISO 8601 timestamp (update on changes) |
 | `due` | no | ISO date |
 | `context` | no | GTD contexts like `@computer`, `@phone` |
-| `recurrence` | no | Recurrence pattern (e.g., `daily`, `every monday`, `every 2 weeks`, `monthly`, `quarterly`) |
-| `recurrence-anchor` | no | ISO date — anchor point for interval calculation |
-| `sort-order` | no | Numeric sort key for custom ordering within GTD groups |
 
 ### GTD Status Flow
 
@@ -105,12 +99,43 @@ any → cancelled
 Read all `.md` files from the vault directories. Parse frontmatter to filter
 by status, priority, project, or tags.
 
-```bash
-# Quick view of all tasks — use Glob + Read tools instead of bash when possible
-```
-
 Prefer using the **Glob** tool to find files and **Read** tool to parse them.
 Group results by status when presenting to the user.
+
+### Task shorthand references
+
+When listing tasks, **always** assign shorthand IDs using a status prefix + number:
+
+| Prefix | Status |
+|--------|--------|
+| `I` | inbox |
+| `N` | next |
+| `A` | active |
+| `W` | waiting |
+| `S` | someday |
+| `D` | done |
+| `C` | cancelled |
+
+**Sort order within each group** (must match the sidebar tree view):
+1. `sort-order` frontmatter field (ascending, lowest first; missing = Infinity)
+2. `priority` (high → medium → low)
+3. `title` alphabetically
+
+**Output format:**
+```
+## Next Actions
+N1. Fix login bug [high, due: 2026-03-20]
+N2. Quick reference shorthand [medium]
+N3. Update API docs [medium]
+```
+
+**Usage rules:**
+- Always output shorthand numbers when listing tasks
+- Accept user references like "mark N1 done", "what's I3?", "move S2 to next"
+- Numbers are ephemeral — recalculate on each listing, don't persist them
+- When a user references a shorthand, resolve it against the most recent listing in the conversation
+- Include both global and workspace vault tasks in a single numbered sequence per status group
+- **Numbers are always based on the full unfiltered list** — if the user has a filter active, numbers may skip (e.g., N1, N3, N7) but N3 always refers to the same task regardless of filters
 
 ### Create a task
 
@@ -145,6 +170,16 @@ move to a different directory (the extension manages this, but for CLI use the
 file can stay in its current directory — status is determined by frontmatter,
 not folder location).
 
+### Rename a task or note
+
+To rename, update both the frontmatter `title` and the filename:
+
+1. Read the file and update `title` in frontmatter
+2. Update `modified` timestamp
+3. Derive the new filename slug: lowercase, replace non-alphanum with hyphens, trim, append `.md`
+4. If the slug changed, write the updated content to the new filename (same directory) and delete the old file
+5. If the slug is the same (e.g., just a casing change), overwrite in place
+
 ### Capture a quick idea
 
 When the user says something like "remind me to..." or "I should...", create an
@@ -164,20 +199,6 @@ Compile a summary of the user's current state. Read all task files and present:
 
 Format it as a clean, scannable summary. Keep it brief — this is a dashboard
 glance, not a deep report.
-
-### Weekly Review
-
-Walk the user through a guided GTD weekly review. Go through each phase in order:
-
-1. **Waiting For** — anything unblocked? Move to Next/Active
-2. **Active** — still working on these? Complete or pause?
-3. **Someday / Maybe** — promote, kill, or keep?
-4. **Inbox** — triage each untriaged item
-5. **Recently Completed** — celebrate, identify follow-ups
-6. **Capture** — anything new to add?
-
-For each task in phases 1-4, present the task and ask what to do with it.
-Log a session entry when the review completes.
 
 ### Context Compilation
 
@@ -215,6 +236,20 @@ The `.sessions/` directory contains daily JSONL files (one JSON object per line)
 
 You don't need to write session entries — the VS Code extension handles that.
 But you can read them to understand recent activity.
+
+## Archive and Delete
+
+### Vault files (notes, references, projects)
+- **Archive**: Move the file to `archive/` in the same vault. Do not delete vault
+  files directly — archive first.
+- **Unarchive**: Move the file from `archive/` back to `notes/`.
+- **Delete**: Only delete vault files that are already in `archive/`.
+- Archived files are excluded from search, filter, and context compilation.
+
+### Tasks
+- Tasks do not use archive. They follow the GTD status flow.
+- **Delete**: Only delete tasks with status `done` or `cancelled`.
+  To remove an unwanted task, set its status to `cancelled` first, then delete.
 
 ## Tips
 
