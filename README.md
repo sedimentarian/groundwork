@@ -273,24 +273,51 @@ On workspace open, Groundwork checks if your AI files are older than your vault.
 
 ### AI Skills
 
-Groundwork ships with **agent skills** that teach AI tools how to interact with your vault directly — creating tasks, running briefings, triaging inbox, and more — all from the CLI without needing the VS Code extension UI.
+Groundwork ships with an **agent skill** that teaches AI tools how to interact with your vault directly — creating tasks, running briefings, triaging inbox, and more — all from the CLI without needing the VS Code extension UI.
 
-| Tool | Skill Location | Auto-loaded? |
+The canonical skill lives at `.claude/skills/groundwork/SKILL.md`. Both Claude Code and GitHub Copilot auto-discover it when you open a project containing this file.
+
+#### Auto-discovery
+
+| Tool | Discovers from | How |
 |---|---|---|
-| **Claude Code** | `.claude/skills/groundwork/SKILL.md` | Yes — Claude discovers it automatically |
-| **GitHub Copilot** | `.github/skills/groundwork/SKILL.md` | Yes — Copilot discovers it automatically |
+| **Claude Code** | `.claude/skills/groundwork/SKILL.md` | Automatic — Claude scans `.claude/skills/` |
+| **GitHub Copilot** | `.github/skills/groundwork/SKILL.md` | Automatic — Copilot scans `.github/skills/` |
 
-Both skills teach the AI to:
+> The Copilot location is a symlink to the Claude skill — there's a single source of truth.
+
+#### Installing the skill in your own projects
+
+If you're a **user** of Groundwork (not developing it), install the skill so your AI tools interact with your vault:
+
+**Claude Code** — install globally (works in every project):
+```bash
+mkdir -p ~/.claude/skills/groundwork
+curl -o ~/.claude/skills/groundwork/SKILL.md \
+  https://raw.githubusercontent.com/lwbailey/groundwork/main/.claude/skills/groundwork/SKILL.md
+```
+
+**GitHub Copilot** — install per-project:
+```bash
+mkdir -p .github/skills/groundwork
+curl -o .github/skills/groundwork/SKILL.md \
+  https://raw.githubusercontent.com/lwbailey/groundwork/main/.claude/skills/groundwork/SKILL.md
+```
+
+Or copy `.claude/skills/groundwork/SKILL.md` from this repo to the appropriate location.
+
+#### What the skill enables
+
 - Read and write vault files (frontmatter + markdown body)
 - Create, update, and triage tasks using GTD status flow
+- Reference tasks by shorthand (N1, I2, S3) matching the sidebar sort order
 - Run daily briefings and weekly reviews
 - Search and filter by tag, context, project, or text
 - Compile context for other AI tools
 - Capture quick ideas directly to inbox
+- Archive and delete with proper guards
 
-The skills use the [Agent Skills](https://agentskills.io) open standard, so they work with any compatible AI tool.
-
-> **Tip:** The skills work alongside the generated files (`CLAUDE.md`, `copilot-instructions.md`). Generated files provide *read-only context* about your current work. Skills provide *read-write capability* to interact with the vault.
+> **Tip:** The skill works alongside generated files (`CLAUDE.md`, `copilot-instructions.md`). Generated files provide *read-only context* about your current work. The skill provides *read-write capability* to interact with the vault.
 
 ---
 
