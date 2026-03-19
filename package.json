@@ -4,7 +4,7 @@
   "description": "The context layer your AI tools are missing — structured notes, reference knowledge, and task management that feeds directly into Copilot, Claude, and any AI coding assistant",
   "version": "0.2.0",
   "publisher": "groundwork-dev",
-  "license": "MIT",
+  "license": "GPL-3.0-only",
   "icon": "images/icon.png",
   "repository": {
     "type": "git",
