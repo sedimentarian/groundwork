@@ -139,6 +139,7 @@ N3. Update API docs [medium]
 - Numbers are ephemeral — recalculate on each listing, don't persist them
 - When a user references a shorthand, resolve it against the most recent listing in the conversation
 - Include both global and workspace vault tasks in a single numbered sequence per status group
+- **Numbers are always based on the full unfiltered list** — if the user has a filter active, numbers may skip (e.g., N1, N3, N7) but N3 always refers to the same task regardless of filters
 
 ### Create a task
 
@@ -253,55 +254,6 @@ The `.sessions/` directory contains daily JSONL files (one JSON object per line)
 
 You don't need to write session entries — the VS Code extension handles that.
 But you can read them to understand recent activity.
-
-## Task Shorthand References
-
-When listing tasks, always use numbered shorthand prefixes so the user can
-reference tasks concisely in follow-up messages.
-
-### Prefix Mapping
-
-| Prefix | Status |
-|--------|--------|
-| `I` | inbox |
-| `N` | next |
-| `A` | active |
-| `W` | waiting |
-| `S` | someday |
-| `D` | done |
-| `C` | cancelled |
-
-### Sort Order (within each group)
-
-1. Priority: high → medium → low
-2. Due date: soonest first (no due = last)
-3. Title: alphabetical
-
-### Output Format
-
-When listing tasks, always include the shorthand number:
-
-```
-## Next Actions
-N1. Fix login bug [high, due: 2026-03-20]
-N2. Update API docs [medium]
-N3. Add unit tests [low]
-
-## Inbox
-I1. Rename project folder
-I2. Consider renaming to Brainpan
-```
-
-### Accepting Shorthand References
-
-When the user says things like:
-- "mark N1 done" → resolve N1 to the first Next task from the most recent listing
-- "what's I3?" → show details of the third Inbox task
-- "move S2 to next" → change status of the second Someday task
-- "delete D1" → delete the first Done task
-
-Numbers are ephemeral — recalculate on each listing, never persist them.
-Resolve against the most recent listing in the current conversation.
 
 ## Archive and Delete
 
