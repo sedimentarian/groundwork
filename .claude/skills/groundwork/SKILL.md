@@ -20,8 +20,11 @@ full read/write access to the vault — no VS Code extension needed.
 - **Global vault**: `~/.groundwork/` — available everywhere
 - **Workspace vault**: `.groundwork/` in the current project root — project-specific
 
-Always check both locations. The global vault is the primary one. Workspace vaults
-are optional and project-scoped.
+**IMPORTANT: Always search BOTH vaults when listing, querying, or counting tasks.**
+Search for files in both `~/.groundwork/` and `.groundwork/` (relative to the
+workspace root). The workspace vault may not exist — that's fine, just skip it if the
+directory isn't there. When presenting results, include tasks from both vaults and
+note which vault each task comes from (global 🌐 or workspace 📂).
 
 ## Directory Structure
 
@@ -73,6 +76,9 @@ helps describe the task or note.
 | `modified` | no | ISO 8601 timestamp (update on changes) |
 | `due` | no | ISO date |
 | `context` | no | GTD contexts like `@computer`, `@phone` |
+| `recurrence` | no | Recurrence pattern (e.g., `daily`, `every monday`, `every 2 weeks`, `monthly`, `quarterly`) |
+| `recurrence-anchor` | no | ISO date — anchor point for interval calculation |
+| `sort-order` | no | Numeric sort key for custom ordering within GTD groups |
 
 ### GTD Status Flow
 
@@ -97,10 +103,8 @@ any → cancelled
 ### List tasks
 
 Read all `.md` files from the vault directories. Parse frontmatter to filter
-by status, priority, project, or tags.
-
-Prefer using the **Glob** tool to find files and **Read** tool to parse them.
-Group results by status when presenting to the user.
+by status, priority, project, or tags. Use file search and read tools to find
+and parse vault files. Group results by status when presenting to the user.
 
 ### Task shorthand references
 
@@ -186,7 +190,7 @@ When the user says something like "remind me to..." or "I should...", create an
 inbox task immediately. Keep the bar low — capturing fast matters more than
 perfect formatting.
 
-### Daily Briefing (`/brief`)
+### Daily Briefing
 
 Compile a summary of the user's current state. Read all task files and present:
 
@@ -199,6 +203,20 @@ Compile a summary of the user's current state. Read all task files and present:
 
 Format it as a clean, scannable summary. Keep it brief — this is a dashboard
 glance, not a deep report.
+
+### Weekly Review
+
+Walk the user through a guided GTD weekly review. Go through each phase in order:
+
+1. **Waiting For** — anything unblocked? Move to Next/Active
+2. **Active** — still working on these? Complete or pause?
+3. **Someday / Maybe** — promote, kill, or keep?
+4. **Inbox** — triage each untriaged item
+5. **Recently Completed** — celebrate, identify follow-ups
+6. **Capture** — anything new to add?
+
+For each task in phases 1-4, present the task and ask what to do with it.
+Log a session entry when the review completes.
 
 ### Context Compilation
 
@@ -221,9 +239,9 @@ The vault supports several filtering dimensions when querying tasks:
 
 Multiple filters can be combined simultaneously.
 
-For CLI/tool use: use the **Grep** tool to search across vault files for keywords,
-then **Read** the matching files to present results with context. For structured
-filtering, parse frontmatter from all task files and filter in memory.
+Search across vault files for keywords, then read matching files to present
+results with context. For structured filtering, parse frontmatter from all
+task files and filter in memory.
 
 ## Session Tracking
 
