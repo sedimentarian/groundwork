@@ -23,6 +23,17 @@ export class TaskItem {
 
 const TASK_MIME = 'application/vnd.groundwork.task';
 
+/** Shorthand prefix per GTD status — matches the SKILL.md convention */
+const STATUS_PREFIX: Record<TaskStatus, string> = {
+  inbox: 'I',
+  next: 'N',
+  active: 'A',
+  waiting: 'W',
+  someday: 'S',
+  done: 'D',
+  cancelled: 'C',
+};
+
 export class TaskTreeProvider implements vscode.TreeDataProvider<TaskTreeItem>,
   vscode.TreeDragAndDropController<TaskTreeItem> {
 
@@ -36,6 +47,9 @@ export class TaskTreeProvider implements vscode.TreeDataProvider<TaskTreeItem>,
   private cache: Map<TaskStatus, ParsedNote[]> = new Map();
   private _filter: TaskFilter = {};
   private _dragInProgress = false;
+
+  /** Maps file path → shorthand like "N1", "I3". Computed from the FULL unfiltered list so numbers are stable across filters. */
+  private shorthandMap: Map<string, string> = new Map();
 
   /** Callback invoked when a drop changes a task — lets extension.ts log + refresh */
   onTaskDropped?: (filePath: string, detail: string) => void;
@@ -262,13 +276,15 @@ export class TaskTreeProvider implements vscode.TreeDataProvider<TaskTreeItem>,
       arguments: [vscode.Uri.file(note.path)],
     };
 
-    // Description: scope emoji (learned shorthand, full word in tooltip) + contexts
+    // Description: shorthand + scope emoji + contexts
+    const shorthand = this.shorthandMap.get(note.path) ?? '';
     const scopeEmoji = note.source === 'workspace' ? '📂' : '🌐';
     const contexts = note.frontmatter.context;
     const contextStr = contexts && Array.isArray(contexts) && contexts.length > 0
       ? contexts.join(', ')
       : '';
-    item.description = contextStr ? `${scopeEmoji} ${contextStr}` : scopeEmoji;
+    const descParts = [shorthand, scopeEmoji, contextStr].filter(Boolean);
+    item.description = descParts.join(' ');
 
     // 3-state attention signal — red/amber/neutral/done/cancelled
     if (note.frontmatter.status === 'cancelled') {
@@ -295,7 +311,7 @@ export class TaskTreeProvider implements vscode.TreeDataProvider<TaskTreeItem>,
     item.contextValue = `task-item-${note.source === 'workspace' ? 'workspace' : 'global'}-${status}`;
 
     // Rich tooltip — metadata table + body preview
-    item.tooltip = buildTooltip(note, title, contextStr);
+    item.tooltip = buildTooltip(note, title, contextStr, shorthand);
 
     return item;
   }
@@ -310,13 +326,29 @@ export class TaskTreeProvider implements vscode.TreeDataProvider<TaskTreeItem>,
 
   async getChildren(element?: TaskTreeItem): Promise<TaskTreeItem[]> {
     if (!element) {
-      let allTasks = await this.manager.queryNotes({ type: 'task' });
+      const allTasks = await this.manager.queryNotes({ type: 'task' });
 
-      // Apply all active filters
-      allTasks = applyFilters(allTasks, this._filter);
+      // Build shorthand map from the FULL unfiltered list so numbers are stable
+      this.shorthandMap.clear();
+      const unfilteredGroups = new Map<TaskStatus, ParsedNote[]>();
+      for (const task of allTasks) {
+        const status = (task.frontmatter.status as TaskStatus) ?? 'inbox';
+        if (!unfilteredGroups.has(status)) unfilteredGroups.set(status, []);
+        unfilteredGroups.get(status)!.push(task);
+      }
+      for (const [status, tasks] of unfilteredGroups) {
+        tasks.sort(sortTasks);
+        const prefix = STATUS_PREFIX[status] ?? '?';
+        for (let i = 0; i < tasks.length; i++) {
+          this.shorthandMap.set(tasks[i].path, `${prefix}${i + 1}`);
+        }
+      }
+
+      // Now apply filters for display
+      const filteredTasks = applyFilters(allTasks, this._filter);
 
       this.cache.clear();
-      for (const task of allTasks) {
+      for (const task of filteredTasks) {
         const status = (task.frontmatter.status as TaskStatus) ?? 'inbox';
         if (!this.cache.has(status)) this.cache.set(status, []);
         this.cache.get(status)!.push(task);
@@ -434,11 +466,12 @@ function dueUrgency(dueStr?: string): 'overdue' | 'soon' | 'normal' {
   return 'normal';
 }
 
-function buildTooltip(note: ParsedNote, title: string, contextStr: string): vscode.MarkdownString {
+function buildTooltip(note: ParsedNote, title: string, contextStr: string, shorthand?: string): vscode.MarkdownString {
   const md = new vscode.MarkdownString('', true);
   md.isTrusted = true;
 
-  md.appendMarkdown(`**${title}**\n\n`);
+  const prefix = shorthand ? `**${shorthand}** · ` : '';
+  md.appendMarkdown(`${prefix}**${title}**\n\n`);
 
   const status = note.frontmatter.status ?? 'inbox';
   const statusLabel = GTD_LISTS[status as TaskStatus] ?? status;
