@@ -6,13 +6,16 @@ import { NoteFrontmatter, TaskStatus, GTD_LISTS, VaultScope } from '../vault/typ
 export class EditorPanelManager {
   private panels = new Map<string, vscode.WebviewPanel>();
   private onDidSave: (() => void) | undefined;
+  private onInitWorkspace: ((wPath: string) => Promise<void>) | undefined;
 
   constructor(
     private manager: VaultManager,
     private extensionUri: vscode.Uri,
-    onDidSave?: () => void
+    onDidSave?: () => void,
+    onInitWorkspace?: (wPath: string) => Promise<void>
   ) {
     this.onDidSave = onDidSave;
+    this.onInitWorkspace = onInitWorkspace;
   }
 
   async openFile(filePath: string): Promise<void> {
@@ -130,7 +133,11 @@ export class EditorPanelManager {
             return;
           }
           const wPath = path.join(workspaceFolder.uri.fsPath, '.groundwork');
-          await this.manager.initWorkspace(wPath);
+          if (this.onInitWorkspace) {
+            await this.onInitWorkspace(wPath);
+          } else {
+            await this.manager.initWorkspace(wPath);
+          }
           targetRoot = wPath;
         }
 

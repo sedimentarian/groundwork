@@ -78,7 +78,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
     sessionTree.refresh();
   };
 
-  editorPanels = new EditorPanelManager(manager, ctx.extensionUri, refreshAll);
+  editorPanels = new EditorPanelManager(manager, ctx.extensionUri, refreshAll, initWorkspaceVault);
   briefingPanel = new BriefingPanelManager(manager, ctx.extensionUri, refreshAll);
   weeklyReviewPanel = new WeeklyReviewPanelManager(manager, ctx.extensionUri, refreshAll);
 
@@ -129,7 +129,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
       if (answer !== 'Create & Move') return;
 
       const wPath = path.join(workspaceFolder.uri.fsPath, '.groundwork');
-      await manager.initWorkspace(wPath);
+      await initWorkspaceVault(wPath);
       targetRoot = wPath;
       refreshAll(); // show new workspace root in vault tree
     }
@@ -177,7 +177,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
       // Create workspace vault on demand if it doesn't exist
       if (!manager.workspaceStore) {
         const wPath = path.join(workspaceFolder.uri.fsPath, '.groundwork');
-        await manager.initWorkspace(wPath);
+        await initWorkspaceVault(wPath);
         refreshAll();
       }
       const rootDir = manager.rootDirFor('workspace');
@@ -186,6 +186,54 @@ export async function activate(ctx: vscode.ExtensionContext) {
     }
 
     return { scope: 'global', rootDir: manager.globalPath };
+  }
+
+  // --- Helper: offer to add .groundwork/ to .gitignore ---
+  async function promptGitignore(workspaceRoot: string) {
+    const gitDir = path.join(workspaceRoot, '.git');
+    try {
+      const stat = await vscode.workspace.fs.stat(vscode.Uri.file(gitDir));
+      if (stat.type !== vscode.FileType.Directory) return;
+    } catch {
+      return; // no .git directory — not a git repo
+    }
+
+    const gitignorePath = path.join(workspaceRoot, '.gitignore');
+    let content = '';
+    try {
+      const bytes = await vscode.workspace.fs.readFile(vscode.Uri.file(gitignorePath));
+      content = Buffer.from(bytes).toString('utf8');
+    } catch {
+      // .gitignore doesn't exist yet — that's fine
+    }
+
+    // Check if .groundwork is already ignored
+    const lines = content.split('\n').map(l => l.trim());
+    if (lines.some(l => l === '.groundwork' || l === '.groundwork/' || l === '/.groundwork' || l === '/.groundwork/')) {
+      return; // already gitignored
+    }
+
+    const answer = await vscode.window.showInformationMessage(
+      'Add .groundwork/ to .gitignore? This keeps your workspace vault out of version control.',
+      'Add to .gitignore', 'Skip'
+    );
+    if (answer !== 'Add to .gitignore') return;
+
+    const newLine = content.length > 0 && !content.endsWith('\n') ? '\n' : '';
+    const entry = `${newLine}.groundwork/\n`;
+    await vscode.workspace.fs.writeFile(
+      vscode.Uri.file(gitignorePath),
+      Buffer.from(content + entry, 'utf8')
+    );
+    vscode.window.showInformationMessage('.groundwork/ added to .gitignore');
+  }
+
+  // --- Helper: init workspace vault + prompt gitignore ---
+  async function initWorkspaceVault(wPath: string) {
+    await manager.initWorkspace(wPath);
+    if (workspaceFolder) {
+      promptGitignore(workspaceFolder.uri.fsPath); // fire-and-forget, don't block
+    }
   }
 
   // --- Commands ---
@@ -268,7 +316,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
       }
 
       const wPath = path.join(workspaceFolder.uri.fsPath, '.groundwork');
-      await manager.initWorkspace(wPath);
+      await initWorkspaceVault(wPath);
       vscode.commands.executeCommand('setContext', 'groundwork.hasWorkspaceVault', true);
       refreshAll();
       vscode.window.showInformationMessage(`Workspace vault created at: ${wPath}`);
@@ -375,7 +423,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
 
       // If workspace vault doesn't exist and user picked workspace, create it
       if (target.scope === 'workspace' && !manager.workspaceStore && workspaceFolder) {
-        await manager.initWorkspace(path.join(workspaceFolder.uri.fsPath, '.groundwork'));
+        await initWorkspaceVault(path.join(workspaceFolder.uri.fsPath, '.groundwork'));
       }
 
       const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -874,7 +922,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
     updateStatusBar();
   };
   // Patch the refreshAll reference used by editor panels, briefing, and weekly review
-  editorPanels = new EditorPanelManager(manager, ctx.extensionUri, refreshAllWithStatus);
+  editorPanels = new EditorPanelManager(manager, ctx.extensionUri, refreshAllWithStatus, initWorkspaceVault);
   briefingPanel = new BriefingPanelManager(manager, ctx.extensionUri, refreshAllWithStatus);
   weeklyReviewPanel = new WeeklyReviewPanelManager(manager, ctx.extensionUri, refreshAllWithStatus);
 
@@ -918,6 +966,12 @@ export async function activate(ctx: vscode.ExtensionContext) {
         await ctx.globalState.update('groundwork.lastBriefingDate', todayStr);
       }, 1500);
     }
+  }
+
+  // --- Gitignore check: if workspace vault exists but .groundwork/ isn't gitignored ---
+  if (workspaceVaultExists && workspaceFolder) {
+    // Deferred so it doesn't block activation
+    setTimeout(() => promptGitignore(workspaceFolder.uri.fsPath), 2000);
   }
 
   // --- Staleness check on workspace open (deferred so it doesn't block activation) ---
