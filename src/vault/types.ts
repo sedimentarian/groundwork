@@ -1,7 +1,7 @@
 /** Frontmatter parsed from a markdown file */
 export interface NoteFrontmatter {
   title?: string;
-  type?: 'note' | 'task' | 'project' | 'reference' | 'log';
+  type?: 'note' | 'task' | 'project' | 'reference' | 'decision' | 'log';
   status?: TaskStatus;
   context?: string[];    // GTD contexts: @computer, @phone, etc.
   project?: string;      // Parent project name

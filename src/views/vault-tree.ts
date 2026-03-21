@@ -386,6 +386,7 @@ function fileIcon(file: VaultFile): string {
   }
   switch (type) {
     case 'task':      return 'checklist';
+    case 'decision':  return 'law';
     case 'reference': return 'book';
     case 'note':      return 'note';
     case 'log':       return 'output';
@@ -398,6 +399,7 @@ function fileIcon(file: VaultFile): string {
 function dirIcon(name: string): string {
   switch (name) {
     case 'inbox':     return 'inbox';
+    case 'decisions': return 'law';
     case 'projects':  return 'project';
     case 'reference': return 'book';
     case 'logs':      return 'output';
@@ -412,6 +414,8 @@ function folderToNoteType(folder: string): string | undefined {
     case 'inbox':     return 'task';
     case 'note':
     case 'notes':     return 'note';
+    case 'decision':
+    case 'decisions': return 'decision';
     case 'references':
     case 'reference': return 'reference';
     case 'project':

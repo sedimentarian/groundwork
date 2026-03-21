@@ -15,8 +15,6 @@ import { BriefingPanelManager } from './views/briefing-panel';
 import { pickNoteCreationMethod, pickTaskCreationMethod } from './note-creation';
 import { WeeklyReviewPanelManager } from './weekly-review';
 
-const BUILD_MARKER = 'dnd-type-fix-2026-03-20a';
-
 let manager: VaultManager;
 let contextGen: ContextGenerator;
 let sessionTracker: SessionTracker;
@@ -62,8 +60,6 @@ export async function activate(ctx: vscode.ExtensionContext) {
 
   // Output channel — declared early so commands can log to it
   const out = vscode.window.createOutputChannel('Groundwork');
-  out.appendLine(`[Groundwork] Activated`);
-  out.appendLine(`[Groundwork] Build marker: ${BUILD_MARKER}`);
   out.appendLine(`[Groundwork] Activated at: ${new Date().toISOString()}`);
   out.appendLine(`[Groundwork] Global vault: ${globalPath}`);
   if (manager.workspacePath) out.appendLine(`[Groundwork] Workspace vault: ${manager.workspacePath}`);
@@ -756,23 +752,24 @@ export async function activate(ctx: vscode.ExtensionContext) {
 
       const content = await contextGen.generateClaudeMd(workspaceFolder.uri.fsPath);
       const targetPath = path.join(workspaceFolder.uri.fsPath, 'CLAUDE.md');
+      const uri = vscode.Uri.file(targetPath);
+      await vscode.workspace.fs.writeFile(uri, Buffer.from(content, 'utf-8'));
 
-      const doc = await vscode.workspace.openTextDocument({
-        content,
-        language: 'markdown',
-      });
-      await vscode.window.showTextDocument(doc);
-
-      const action = await vscode.window.showInformationMessage(
-        `Write to ${targetPath}?`,
-        'Write', 'Cancel'
-      );
-
-      if (action === 'Write') {
-        const uri = vscode.Uri.file(targetPath);
-        await vscode.workspace.fs.writeFile(uri, Buffer.from(content, 'utf-8'));
-        vscode.window.showInformationMessage('CLAUDE.md written.');
+      // Also write the skill file so Claude Code can read it
+      const skillDir = path.join(workspaceFolder.uri.fsPath, '.claude', 'skills', 'groundwork');
+      const skillPath = path.join(skillDir, 'SKILL.md');
+      const extSkillPath = path.join(ctx.extensionPath, '.claude', 'skills', 'groundwork', 'SKILL.md');
+      try {
+        const skillContent = await vscode.workspace.fs.readFile(vscode.Uri.file(extSkillPath));
+        await vscode.workspace.fs.createDirectory(vscode.Uri.file(skillDir));
+        await vscode.workspace.fs.writeFile(vscode.Uri.file(skillPath), skillContent);
+      } catch {
+        // Skill file not bundled — skip silently
       }
+
+      const doc = await vscode.workspace.openTextDocument(uri);
+      await vscode.window.showTextDocument(doc);
+      vscode.window.showInformationMessage('CLAUDE.md and skill file written.');
     }),
 
     // Generate Copilot Instructions
@@ -786,25 +783,27 @@ export async function activate(ctx: vscode.ExtensionContext) {
       const targetDir = path.join(workspaceFolder.uri.fsPath, '.github');
       const targetPath = path.join(targetDir, 'copilot-instructions.md');
 
-      const doc = await vscode.workspace.openTextDocument({
-        content,
-        language: 'markdown',
-      });
-      await vscode.window.showTextDocument(doc);
-
-      const action = await vscode.window.showInformationMessage(
-        `Write to ${targetPath}?`,
-        'Write', 'Cancel'
+      await vscode.workspace.fs.createDirectory(vscode.Uri.file(targetDir));
+      await vscode.workspace.fs.writeFile(
+        vscode.Uri.file(targetPath),
+        Buffer.from(content, 'utf-8')
       );
 
-      if (action === 'Write') {
-        await vscode.workspace.fs.createDirectory(vscode.Uri.file(targetDir));
-        await vscode.workspace.fs.writeFile(
-          vscode.Uri.file(targetPath),
-          Buffer.from(content, 'utf-8')
-        );
-        vscode.window.showInformationMessage('copilot-instructions.md written.');
+      // Also write the skill file so Copilot can read it
+      const skillDir = path.join(targetDir, 'skills', 'groundwork');
+      const skillPath = path.join(skillDir, 'SKILL.md');
+      const extSkillPath = path.join(ctx.extensionPath, '.claude', 'skills', 'groundwork', 'SKILL.md');
+      try {
+        const skillContent = await vscode.workspace.fs.readFile(vscode.Uri.file(extSkillPath));
+        await vscode.workspace.fs.createDirectory(vscode.Uri.file(skillDir));
+        await vscode.workspace.fs.writeFile(vscode.Uri.file(skillPath), skillContent);
+      } catch {
+        // Skill file not bundled — skip silently
       }
+
+      const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(targetPath));
+      await vscode.window.showTextDocument(doc);
+      vscode.window.showInformationMessage('copilot-instructions.md and skill file written to .github/');
     }),
 
     // Daily Briefing

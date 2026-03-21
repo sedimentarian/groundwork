@@ -2,13 +2,17 @@
   "name": "groundwork",
   "displayName": "Groundwork",
   "description": "The context layer your AI tools are missing — structured notes, reference knowledge, and task management that feeds directly into Copilot, Claude, and any AI coding assistant",
-  "version": "0.2.0",
-  "publisher": "groundwork-dev",
+  "version": "0.3.0",
+  "publisher": "sedimentarian",
   "license": "GPL-3.0-only",
   "icon": "images/icon.png",
   "repository": {
     "type": "git",
-    "url": "https://github.com/lwbailey/groundwork"
+    "url": "https://github.com/sedimentarian/groundwork"
+  },
+  "homepage": "https://github.com/sedimentarian/groundwork#readme",
+  "bugs": {
+    "url": "https://github.com/sedimentarian/groundwork/issues"
   },
   "engines": {
     "vscode": "^1.89.0"
@@ -492,7 +496,6 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "lint": "eslint src --ext ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },

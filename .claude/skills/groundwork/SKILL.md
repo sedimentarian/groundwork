@@ -31,6 +31,7 @@ note which vault each task comes from (global 🌐 or workspace 📂).
 ```
 .groundwork/
 ├── inbox/        # New captures, untriaged tasks
+├── decisions/    # Architecture decisions, trade-offs, ADRs
 ├── notes/        # General notes
 ├── projects/     # Project-level docs
 ├── reference/    # Reference material
@@ -67,7 +68,7 @@ helps describe the task or note.
 | Field | Required | Values |
 |-------|----------|--------|
 | `title` | yes | Human-readable title |
-| `type` | yes | `task`, `note`, `project`, `reference`, `log` |
+| `type` | yes | `task`, `note`, `decision`, `project`, `reference`, `log` |
 | `status` | for tasks | `inbox`, `next`, `active`, `waiting`, `someday`, `done`, `cancelled` |
 | `priority` | no | `high`, `medium`, `low` |
 | `project` | no | Parent project name |
@@ -102,9 +103,30 @@ any → cancelled
 
 ### List tasks
 
-Read all `.md` files from the vault directories. Parse frontmatter to filter
-by status, priority, project, or tags. Use file search and read tools to find
-and parse vault files. Group results by status when presenting to the user.
+**Use a single grep command** to extract frontmatter from all vault files at once,
+rather than reading each file individually. This reduces vault listing from N file
+reads to 1 terminal command.
+
+```bash
+# Single-pass extraction of key frontmatter fields from both vaults
+grep -rH "^\(title\|status\|priority\|sort-order\|due\|context\|project\|tags\):" \
+  ~/.groundwork/ .groundwork/ --include="*.md" 2>/dev/null
+```
+
+This returns lines like:
+```
+/Users/you/.groundwork/inbox/fix-login-bug.md:title: Fix login bug
+/Users/you/.groundwork/inbox/fix-login-bug.md:status: inbox
+/Users/you/.groundwork/inbox/fix-login-bug.md:priority: high
+```
+
+**Parse the output** by grouping lines by filename prefix to reconstruct per-file
+frontmatter in memory. Then filter by status, priority, project, or tags as needed.
+Group results by status when presenting to the user.
+
+**Only read individual files** when the body content is actually needed — e.g., to
+show task details, display context, or make edits. For listing and filtering,
+the grep output provides everything required.
 
 ### Task shorthand references
 

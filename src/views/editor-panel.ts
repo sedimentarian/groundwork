@@ -401,39 +401,40 @@ export class EditorPanelManager {
 </head>
 <body>
 
-<div id="topbar">
-  <button id="save-btn">Save</button>
-  <span id="save-hint">⌘S</span>
-  <span id="save-status">✓ Saved</span>
+<div id="topbar" role="toolbar" aria-label="Document actions">
+  <button id="save-btn" aria-label="Save document">Save</button>
+  <span id="save-hint" aria-hidden="true">⌘S</span>
+  <span id="save-status" role="status" aria-live="polite">✓ Saved</span>
 </div>
 
-<div id="fm-card">
+<div id="fm-card" role="group" aria-label="Document metadata">
   <div class="field">
-    <label>Title</label>
+    <label for="fm-title">Title</label>
     <input id="fm-title" value="${escapeAttr(frontmatter.title ?? '')}" />
   </div>
   <div class="field">
-    <label>Type</label>
+    <label for="fm-type">Type</label>
     <select id="fm-type">
       <option value="note"      ${frontmatter.type === 'note'      ? 'selected' : ''}>Note</option>
       <option value="task"      ${frontmatter.type === 'task'      ? 'selected' : ''}>Task</option>
+      <option value="decision"  ${frontmatter.type === 'decision'  ? 'selected' : ''}>Decision</option>
       <option value="reference" ${frontmatter.type === 'reference' ? 'selected' : ''}>Reference</option>
       <option value="project"   ${frontmatter.type === 'project'   ? 'selected' : ''}>Project</option>
     </select>
   </div>
   <div class="field">
-    <label>Scope</label>
+    <label for="fm-scope">Scope</label>
     <select id="fm-scope"${scopeDisabled}>
       <option value="global"     ${scope === 'global'     ? 'selected' : ''}>🌐 Global</option>
       <option value="workspace"  ${scope === 'workspace'  ? 'selected' : ''}>📂 Workspace</option>
     </select>
   </div>
   <div class="field task-only">
-    <label>Status</label>
+    <label for="fm-status">Status</label>
     <select id="fm-status">${statusOptions}</select>
   </div>
   <div class="field task-only">
-    <label>Priority</label>
+    <label for="fm-priority">Priority</label>
     <select id="fm-priority">
       <option value="low"    ${frontmatter.priority === 'low'    ? 'selected' : ''}>Low</option>
       <option value="medium" ${frontmatter.priority === 'medium' ? 'selected' : ''}>Medium</option>
@@ -441,48 +442,48 @@ export class EditorPanelManager {
     </select>
   </div>
   <div class="field task-only">
-    <label>Due Date</label>
+    <label for="fm-due">Due Date</label>
     <input id="fm-due" type="date" value="${escapeAttr(frontmatter.due ?? '')}" />
   </div>
   <div class="field task-only">
-    <label>Recurrence</label>
+    <label for="fm-recurrence">Recurrence</label>
     <input id="fm-recurrence" value="${escapeAttr(recurrenceValue)}" placeholder="daily, every Monday, every 2 weeks…" title="Patterns: daily, every weekday, every Monday, every 2 weeks, monthly, 1st of month, quarterly" />
   </div>
   <div class="field task-only">
-    <label>Context</label>
+    <label for="fm-context">Context</label>
     <input id="fm-context" value="${escapeAttr(contextValue)}" placeholder="@home, @computer" />
   </div>
   <div class="field">
-    <label>Project</label>
+    <label for="fm-project">Project</label>
     <input id="fm-project" value="${escapeAttr(frontmatter.project ?? '')}" />
   </div>
   <div class="field">
-    <label>Tags</label>
+    <label for="fm-tags">Tags</label>
     <input id="fm-tags" value="${escapeAttr(tagsValue)}" placeholder="tag1, tag2" />
   </div>
 </div>
 
-<div id="editor-toolbar">
-  <button data-cmd="bold"        title="Bold (⌘B)"><b>B</b></button>
-  <button data-cmd="italic"      title="Italic (⌘I)"><i>I</i></button>
-  <button data-cmd="strikeThrough" title="Strikethrough"><s>S</s></button>
-  <div class="tb-sep"></div>
-  <button data-heading="1"  title="Heading 1">H1</button>
-  <button data-heading="2"  title="Heading 2">H2</button>
-  <button data-heading="3"  title="Heading 3">H3</button>
-  <div class="tb-sep"></div>
-  <button data-cmd="insertUnorderedList" title="Bullet list">• —</button>
-  <button data-cmd="insertOrderedList"   title="Numbered list">1.</button>
-  <button data-task title="Task list (checklist)">☑</button>
-  <div class="tb-sep"></div>
-  <button data-cmd="formatBlock" data-val="blockquote" title="Quote">❝</button>
-  <button data-code title="Inline code">{ }</button>
-  <div class="tb-sep"></div>
-  <button data-link title="Insert link">🔗</button>
-  <button data-hr title="Horizontal rule">—</button>
+<div id="editor-toolbar" role="toolbar" aria-label="Formatting">
+  <button data-cmd="bold"        title="Bold (⌘B)" aria-label="Bold"><b>B</b></button>
+  <button data-cmd="italic"      title="Italic (⌘I)" aria-label="Italic"><i>I</i></button>
+  <button data-cmd="strikeThrough" title="Strikethrough" aria-label="Strikethrough"><s>S</s></button>
+  <div class="tb-sep" role="separator"></div>
+  <button data-heading="1"  title="Heading 1" aria-label="Heading 1">H1</button>
+  <button data-heading="2"  title="Heading 2" aria-label="Heading 2">H2</button>
+  <button data-heading="3"  title="Heading 3" aria-label="Heading 3">H3</button>
+  <div class="tb-sep" role="separator"></div>
+  <button data-cmd="insertUnorderedList" title="Bullet list" aria-label="Bullet list">• —</button>
+  <button data-cmd="insertOrderedList"   title="Numbered list" aria-label="Numbered list">1.</button>
+  <button data-task title="Task list (checklist)" aria-label="Checklist">☑</button>
+  <div class="tb-sep" role="separator"></div>
+  <button data-cmd="formatBlock" data-val="blockquote" title="Quote" aria-label="Block quote">❝</button>
+  <button data-code title="Inline code" aria-label="Inline code">{ }</button>
+  <div class="tb-sep" role="separator"></div>
+  <button data-link title="Insert link" aria-label="Insert link">🔗</button>
+  <button data-hr title="Horizontal rule" aria-label="Horizontal rule">—</button>
 </div>
 
-<div id="editor" contenteditable="true" spellcheck="true"></div>
+<div id="editor" contenteditable="true" spellcheck="true" role="textbox" aria-multiline="true" aria-label="Document body"></div>
 
 <script nonce="${nonce}" src="${markedUri}"></script>
 <script nonce="${nonce}" src="${turndownUri}"></script>
@@ -706,6 +707,7 @@ function escapeAttr(s: string): string {
 function noteTypeToFolder(noteType: string): string {
   switch (noteType) {
     case 'task':      return 'inbox';
+    case 'decision':  return 'decisions';
     case 'project':   return 'projects';
     case 'reference': return 'reference';
     case 'note':      return 'notes';

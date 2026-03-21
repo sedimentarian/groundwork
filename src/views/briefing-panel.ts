@@ -204,6 +204,8 @@ Tasks:
         briefingData.summary = aiSummary;
         this.panel.webview.html = buildHtml(briefingData);
       }
+    }).catch(() => {
+      // AI summary is optional — template summary is already displayed
     });
   }
 
@@ -301,7 +303,7 @@ function buildHtml(data: BriefingData): string {
         <div class="task-list">
           ${data.recentlyDone.map(t => `
             <div class="task-row done-row">
-              <span class="task-title clickable" data-path="${esc(t.path)}">${esc(t.frontmatter.title ?? t.relativePath)}</span>
+              <span class="task-title clickable" data-path="${esc(t.path)}" role="link" tabindex="0">${esc(t.frontmatter.title ?? t.relativePath)}</span>
               <span class="meta">${t.frontmatter.modified ? timeAgo(new Date(t.frontmatter.modified), data.now) : ''}</span>
             </div>
           `).join('')}
@@ -322,7 +324,7 @@ function buildHtml(data: BriefingData): string {
   // Stats bar
   const totalOpen = data.active.length + data.next.length + data.inbox.length + data.waiting.length;
   const stats = `
-    <div class="stats-bar">
+    <div class="stats-bar" role="status" aria-label="Task statistics">
       <span class="stat">${data.overdue.length} overdue</span>
       <span class="stat">${data.active.length} active</span>
       <span class="stat">${totalOpen} open</span>
@@ -333,7 +335,7 @@ function buildHtml(data: BriefingData): string {
 
   // Summary block
   const summaryHtml = `
-    <div class="summary">
+    <div class="summary" aria-live="polite">
       <p>${esc(data.summary)}</p>
     </div>
   `;
@@ -493,23 +495,23 @@ function buildHtml(data: BriefingData): string {
   </style>
 </head>
 <body>
-  <div class="header">
-    <button class="refresh-btn" id="refresh-btn">↻ Refresh</button>
+  <div class="header" role="banner">
+    <button class="refresh-btn" id="refresh-btn" aria-label="Refresh briefing">↻ Refresh</button>
     <h1>☀️ Daily Briefing</h1>
     <div class="date">${esc(dateStr)}</div>
   </div>
   ${stats}
   ${summaryHtml}
-  <div class="content">
+  <main class="content">
     ${sections.join('\n')}
-  </div>
+  </main>
 
   <script nonce="${nonce}">
   (function() {
     const vscode = acquireVsCodeApi();
 
-    document.addEventListener('click', function(e) {
-      const title = e.target.closest('.task-title.clickable');
+    function handleActivation(e) {
+      var title = e.target.closest('.task-title.clickable');
       if (title) {
         vscode.postMessage({ type: 'openFile', path: title.dataset.path });
         return;
@@ -518,6 +520,14 @@ function buildHtml(data: BriefingData): string {
       if (e.target.id === 'refresh-btn' || e.target.closest('#refresh-btn')) {
         vscode.postMessage({ type: 'refresh' });
         return;
+      }
+    }
+
+    document.addEventListener('click', handleActivation);
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' || e.key === ' ') {
+        var el = e.target.closest('.task-title.clickable, #refresh-btn');
+        if (el) { e.preventDefault(); handleActivation(e); }
       }
     });
   })();
@@ -574,7 +584,7 @@ function renderTaskRow(task: ParsedNote): string {
 
   return `
     <div class="task-row">
-      <span class="task-title clickable" data-path="${esc(task.path)}">${esc(title)}</span>
+      <span class="task-title clickable" data-path="${esc(task.path)}" role="link" tabindex="0">${esc(title)}</span>
       <div class="task-meta">
         ${prioHtml}
         ${dueHtml}

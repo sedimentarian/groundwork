@@ -330,6 +330,9 @@ function noteTypeFromVaultPath(filePath: string, rootDir: string): NoteFrontmatt
     case 'notes':
     case 'note':
       return 'note';
+    case 'decisions':
+    case 'decision':
+      return 'decision';
     case 'reference':
     case 'references':
       return 'reference';

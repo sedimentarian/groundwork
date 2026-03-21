@@ -68,8 +68,8 @@ One click compiles any combination of these layers into context your AI can use.
 Install from the VSCode Extension Marketplace or load from source:
 
 ```bash
-git clone <repo>
-cd knowledge-ext
+git clone https://github.com/sedimentarian/groundwork.git
+cd groundwork
 npm install
 npm run compile
 # Press F5 in VSCode to launch the Extension Development Host
@@ -83,6 +83,60 @@ npm run compile
 4. The global vault is created automatically at `~/.groundwork` on first use
 
 > **Tip:** The global vault (`~/.groundwork`) is always active. For project-specific notes, use the **Init Workspace Vault** button in the Vault panel header — this creates a `.groundwork/` folder in your current workspace.
+
+---
+
+## AI Skills
+
+Groundwork ships with an **agent skill** that teaches AI tools how to interact with your vault directly — creating tasks, running briefings, triaging inbox, and more — all from the CLI without needing the VS Code extension UI.
+
+The canonical skill lives at `.claude/skills/groundwork/SKILL.md`. Both Claude Code and GitHub Copilot auto-discover it when you open a project containing this file.
+
+### Auto-discovery
+
+| Tool | Discovers from | How |
+|---|---|---|
+| **Claude Code** | `.claude/skills/groundwork/SKILL.md` | Automatic — Claude scans `.claude/skills/` |
+| **GitHub Copilot** | `.github/skills/groundwork/SKILL.md` | Automatic — Copilot scans `.github/skills/` |
+
+> The Copilot location is a symlink to the Claude skill — there's a single source of truth.
+
+### Installing the skill in your own projects
+
+If you're a **user** of Groundwork (not developing it), install the skill so your AI tools interact with your vault:
+
+**Claude Code** — install globally (works in every project):
+```bash
+mkdir -p ~/.claude/skills/groundwork
+curl -o ~/.claude/skills/groundwork/SKILL.md \
+  https://raw.githubusercontent.com/sedimentarian/groundwork/main/.claude/skills/groundwork/SKILL.md
+```
+
+**GitHub Copilot** — install per-project:
+```bash
+mkdir -p .github/skills/groundwork
+curl -o .github/skills/groundwork/SKILL.md \
+  https://raw.githubusercontent.com/sedimentarian/groundwork/main/.claude/skills/groundwork/SKILL.md
+```
+
+Or copy `.claude/skills/groundwork/SKILL.md` from this repo to the appropriate location.
+
+### What the skill enables
+
+- Read and write vault files (frontmatter + markdown body)
+- Create, update, and triage tasks using GTD status flow
+- Reference tasks by shorthand (N1, I2, S3) matching the sidebar sort order
+- Run daily briefings and weekly reviews
+- Search and filter by tag, context, project, or text
+- Compile context for other AI tools
+- Capture quick ideas directly to inbox
+- Archive and delete with proper guards
+
+### Generated instruction files
+
+Use `Groundwork: Generate CLAUDE.md` or `Groundwork: Generate Copilot Instructions` from the Command Palette to create instruction files that reference the skill. These files tell your AI tools about the vault and direct them to use the skill for task management.
+
+> **Tip:** The skill provides *read-write capability* to interact with the vault. Generated files provide *read-only context* about your current work. Use both together for the best experience.
 
 ---
 
@@ -117,8 +171,9 @@ All content is markdown files with YAML frontmatter. No database, no lock-in. Ed
 
 ```
 ~/.groundwork/                  <- global vault (always active)
-  inbox/                        <- captured tasks, not yet processed
-  notes/                        <- thinking, decisions, scratch
+  inbox/                        <- captured tasks, not yet processed (Tasks panel only)
+  decisions/                    <- architecture decisions, trade-offs, ADRs
+  notes/                        <- thinking, scratch, working notes
   projects/                     <- project-level context
   reference/                    <- durable knowledge and guides
   logs/                         <- structured log entries
@@ -126,6 +181,7 @@ All content is markdown files with YAML frontmatter. No database, no lock-in. Ed
 
 your-project/.groundwork/       <- workspace vault (per project)
   inbox/
+  decisions/
   notes/
   projects/
   reference/
@@ -137,8 +193,9 @@ When you create or change a note's type, Groundwork moves it to the right folder
 
 | Type | Folder | Purpose |
 |---|---|---|
-| **Task** | `inbox/` | Something to do |
-| **Note** | `notes/` | Thinking, scratch, decisions |
+| **Task** | `inbox/` | Something to do (shown in Tasks panel only) |
+| **Decision** | `decisions/` | Architecture decisions, trade-offs, ADRs |
+| **Note** | `notes/` | Thinking, scratch, working notes |
 | **Project** | `projects/` | Project-level context |
 | **Reference** | `reference/` | Durable knowledge |
 
@@ -271,54 +328,6 @@ _Generated 2026-03-15T14:30_
 
 On workspace open, Groundwork checks if your AI files are older than your vault. If so, it suggests regenerating.
 
-### AI Skills
-
-Groundwork ships with an **agent skill** that teaches AI tools how to interact with your vault directly — creating tasks, running briefings, triaging inbox, and more — all from the CLI without needing the VS Code extension UI.
-
-The canonical skill lives at `.claude/skills/groundwork/SKILL.md`. Both Claude Code and GitHub Copilot auto-discover it when you open a project containing this file.
-
-#### Auto-discovery
-
-| Tool | Discovers from | How |
-|---|---|---|
-| **Claude Code** | `.claude/skills/groundwork/SKILL.md` | Automatic — Claude scans `.claude/skills/` |
-| **GitHub Copilot** | `.github/skills/groundwork/SKILL.md` | Automatic — Copilot scans `.github/skills/` |
-
-> The Copilot location is a symlink to the Claude skill — there's a single source of truth.
-
-#### Installing the skill in your own projects
-
-If you're a **user** of Groundwork (not developing it), install the skill so your AI tools interact with your vault:
-
-**Claude Code** — install globally (works in every project):
-```bash
-mkdir -p ~/.claude/skills/groundwork
-curl -o ~/.claude/skills/groundwork/SKILL.md \
-  https://raw.githubusercontent.com/lwbailey/groundwork/main/.claude/skills/groundwork/SKILL.md
-```
-
-**GitHub Copilot** — install per-project:
-```bash
-mkdir -p .github/skills/groundwork
-curl -o .github/skills/groundwork/SKILL.md \
-  https://raw.githubusercontent.com/lwbailey/groundwork/main/.claude/skills/groundwork/SKILL.md
-```
-
-Or copy `.claude/skills/groundwork/SKILL.md` from this repo to the appropriate location.
-
-#### What the skill enables
-
-- Read and write vault files (frontmatter + markdown body)
-- Create, update, and triage tasks using GTD status flow
-- Reference tasks by shorthand (N1, I2, S3) matching the sidebar sort order
-- Run daily briefings and weekly reviews
-- Search and filter by tag, context, project, or text
-- Compile context for other AI tools
-- Capture quick ideas directly to inbox
-- Archive and delete with proper guards
-
-> **Tip:** The skill works alongside generated files (`CLAUDE.md`, `copilot-instructions.md`). Generated files provide *read-only context* about your current work. The skill provides *read-write capability* to interact with the vault.
-
 ---
 
 ## Session Tracking
@@ -348,6 +357,7 @@ All available via Command Palette (`Cmd+Shift+P`) prefixed with `Groundwork:`.
 | Weekly Review | Full-week overview panel with stats, categorized sections, and inline status actions |
 | New Task | Create a task |
 | New Note | Create a note (blank, template, or AI-generated) |
+| New Note Here | Create a note in a specific vault folder (right-click) |
 | Open in WYSIWYG Editor | Open a vault file in the rich editor |
 | Copy Active Context to Clipboard | One-click context for AI |
 | Compile Context for AI | Manual multi-select context compilation |
@@ -359,9 +369,16 @@ All available via Command Palette (`Cmd+Shift+P`) prefixed with `Groundwork:`.
 | Move to Workspace Vault | Move from global to workspace |
 | Initialize Workspace Vault | Create `.groundwork/` in workspace |
 | Open Vault Folder | Change global vault location |
-| Filter Tasks | Filter by tag, context, project, or search text |
+| Filter by Tag | Filter tasks by tag |
 | Search Tasks | Full-text search across task titles, bodies, tags, and projects |
-| Clear Filters | Remove all active filters |
+| Clear Task Filters | Remove active task filters |
+| Filter Vault | Filter vault by type or tag |
+| Search Vault | Full-text search across vault notes |
+| Clear Vault Filter | Remove active vault filters |
+| Collapse All Tasks | Collapse all task groups |
+| Expand All Tasks | Expand all task groups |
+| Collapse All Vault | Collapse all vault folders |
+| Expand All Vault | Expand all vault folders |
 | Log Activity | Add a timestamped note |
 | Refresh | Reload sidebar |
 | Rename | Rename a note or task (updates title and filename). Right-click or F2 |

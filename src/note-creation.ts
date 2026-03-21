@@ -14,7 +14,7 @@ const TEMPLATES: Record<string, NoteTemplate> = {
   decision: {
     label: '⚖️ Decision Log',
     description: 'Document a decision with options and rationale',
-    noteType: 'reference',
+    noteType: 'decision',
     body: (title) => `
 # ${title}
 
