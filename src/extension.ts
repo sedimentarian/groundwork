@@ -15,6 +15,8 @@ import { BriefingPanelManager } from './views/briefing-panel';
 import { pickNoteCreationMethod, pickTaskCreationMethod } from './note-creation';
 import { WeeklyReviewPanelManager } from './weekly-review';
 
+const BUILD_MARKER = 'dnd-type-fix-2026-03-20a';
+
 let manager: VaultManager;
 let contextGen: ContextGenerator;
 let sessionTracker: SessionTracker;
@@ -61,6 +63,8 @@ export async function activate(ctx: vscode.ExtensionContext) {
   // Output channel — declared early so commands can log to it
   const out = vscode.window.createOutputChannel('Groundwork');
   out.appendLine(`[Groundwork] Activated`);
+  out.appendLine(`[Groundwork] Build marker: ${BUILD_MARKER}`);
+  out.appendLine(`[Groundwork] Activated at: ${new Date().toISOString()}`);
   out.appendLine(`[Groundwork] Global vault: ${globalPath}`);
   if (manager.workspacePath) out.appendLine(`[Groundwork] Workspace vault: ${manager.workspacePath}`);
 
@@ -89,9 +93,11 @@ export async function activate(ctx: vscode.ExtensionContext) {
     showCollapseAll: false,
   });
 
-  // When a task is moved via drag-and-drop, log the session event
+  // When a task is moved via drag-and-drop, log the session event and update any open editor panel
   taskTree.onTaskDropped = async (filePath: string, detail: string) => {
     await sessionTracker.log({ action: 'status_change', file: filePath, detail });
+    const newStatus = detail.split(' → ')[1];
+    if (newStatus) editorPanels.notifyStatusChange(filePath, newStatus);
   };
 
   // Vault tree view — createTreeView for drag-and-drop support
@@ -101,9 +107,10 @@ export async function activate(ctx: vscode.ExtensionContext) {
     showCollapseAll: false,
   });
 
-  // When a vault file is moved via drag-and-drop, log the session event
-  vaultTree.onFileMoved = async (filePath: string, detail: string) => {
-    await sessionTracker.log({ action: 'status_change', file: filePath, detail });
+  // When a vault file is moved via drag-and-drop, log + reopen editor at new path
+  vaultTree.onFileMoved = async (oldPath: string, newPath: string, detail: string) => {
+    await sessionTracker.log({ action: 'status_change', file: oldPath, detail });
+    await editorPanels.handleFileMove(oldPath, newPath);
   };
 
   ctx.subscriptions.push(

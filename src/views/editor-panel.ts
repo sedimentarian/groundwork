@@ -5,6 +5,8 @@ import { NoteFrontmatter, TaskStatus, GTD_LISTS, VaultScope } from '../vault/typ
 
 export class EditorPanelManager {
   private panels = new Map<string, vscode.WebviewPanel>();
+  /** Live reference to each open panel's note.frontmatter — keyed by filePath */
+  private noteRefs = new Map<string, NoteFrontmatter>();
   private onDidSave: (() => void) | undefined;
   private onInitWorkspace: ((wPath: string) => Promise<void>) | undefined;
 
@@ -18,9 +20,45 @@ export class EditorPanelManager {
     this.onInitWorkspace = onInitWorkspace;
   }
 
+  /**
+   * If a panel is open for filePath, push the new status into the webview
+   * and update the in-memory note so a subsequent save writes the correct value.
+   */
+  notifyStatusChange(filePath: string, newStatus: string): void {
+    const panel = this.panels.get(filePath);
+    if (!panel) return;
+    const fm = this.noteRefs.get(filePath);
+    if (fm) fm.status = newStatus as TaskStatus;
+    panel.webview.postMessage({ type: 'statusExternallyChanged', status: newStatus });
+  }
+
+  /** If an editor panel is open for oldPath, close it and reopen at newPath */
+  async handleFileMove(oldPath: string, newPath: string): Promise<void> {
+    const panel = this.panels.get(oldPath);
+    if (!panel) return;
+    this.panels.delete(oldPath);
+    panel.dispose();
+    await this.openFile(newPath);
+  }
+
   async openFile(filePath: string): Promise<void> {
     const existing = this.panels.get(filePath);
-    if (existing) { existing.reveal(); return; }
+    if (existing) {
+      existing.reveal();
+      // Re-read from disk and push a full frontmatter refresh into the webview
+      // so any externally-changed fields (e.g. status from DnD) are reflected.
+      // Delay slightly — reveal() is sync but the webview JS needs a tick to
+      // process messages after being un-hidden.
+      try {
+        const fresh = await this.manager.readNote(filePath);
+        const ref = this.noteRefs.get(filePath);
+        if (ref) Object.assign(ref, fresh.frontmatter);
+        setTimeout(() => {
+          existing.webview.postMessage({ type: 'frontmatterUpdated', frontmatter: fresh.frontmatter });
+        }, 50);
+      } catch { /* ignore read errors on reveal */ }
+      return;
+    }
 
     const note = await this.manager.readNote(filePath);
     const fileName = path.basename(filePath, '.md');
@@ -40,6 +78,7 @@ export class EditorPanelManager {
     );
 
     this.panels.set(filePath, panel);
+    this.noteRefs.set(filePath, note.frontmatter);
 
     const markedUri = panel.webview.asWebviewUri(
       vscode.Uri.joinPath(this.extensionUri, 'lib', 'marked.umd.js')
@@ -77,36 +116,44 @@ export class EditorPanelManager {
         const oldNoteType = note.frontmatter.type ?? 'note';
         if (newNoteType === oldNoteType) return;
 
-        // Update frontmatter first
-        note.frontmatter.type = newNoteType as NoteFrontmatter['type'];
-        note.frontmatter.modified = new Date().toISOString();
+        try {
+          // Update frontmatter
+          note.frontmatter.type = newNoteType as NoteFrontmatter['type'];
+          note.frontmatter.modified = new Date().toISOString();
 
-        // Determine target folder
-        const targetFolder = noteTypeToFolder(newNoteType);
-        const sourceRoot = this.manager.rootDirFor(note.source);
-        if (!sourceRoot) return;
+          // Determine target folder
+          const targetFolder = noteTypeToFolder(newNoteType);
+          const sourceRoot = this.manager.rootDirFor(note.source);
+          if (!sourceRoot) return;
 
-        const fileName = path.basename(filePath);
-        const store = this.manager.storeFor(note.source) ?? this.manager.globalStore;
-        const targetDir = path.join(sourceRoot, targetFolder);
-        const slug = fileName.replace(/\.md$/, '');
-        const targetPath = await store.findAvailablePath(targetDir, slug);
+          const store = this.manager.storeFor(note.source) ?? this.manager.globalStore;
+          const targetDir = path.join(sourceRoot, targetFolder);
+          const slug = path.basename(filePath, '.md');
+          const targetPath = await store.findAvailablePath(targetDir, slug);
 
-        // If already in the right folder, just save in place
-        const currentFolder = path.relative(sourceRoot, path.dirname(filePath)).split(path.sep)[0] ?? '';
-        if (currentFolder === targetFolder) {
-          await this.manager.writeNote(filePath, note.frontmatter, note.body);
+          // If already in the right folder, just save in place
+          const currentFolder = path.relative(sourceRoot, path.dirname(filePath)).split(path.sep)[0] ?? '';
+          if (currentFolder === targetFolder) {
+            await this.manager.writeNote(filePath, note.frontmatter, note.body);
+            this.onDidSave?.();
+            return;
+          }
+
+          // Move to the correct folder
+          await this.manager.writeNote(targetPath, note.frontmatter, note.body);
+          await this.manager.delete(filePath);
+          this.panels.delete(filePath);
+
+          panel.dispose();
+          await this.openFile(targetPath);
           this.onDidSave?.();
-          return;
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : String(err);
+          vscode.window.showErrorMessage(`Failed to move file: ${message}`);
+          // Revert frontmatter type on failure
+          note.frontmatter.type = oldNoteType as NoteFrontmatter['type'];
+          panel.webview.postMessage({ type: 'revertType', noteType: oldNoteType });
         }
-
-        // Move to the correct folder
-        await this.manager.writeNote(targetPath, note.frontmatter, note.body);
-        await this.manager.delete(filePath);
-
-        panel.dispose();
-        await this.openFile(targetPath);
-        this.onDidSave?.();
         return;
       }
 
@@ -165,7 +212,7 @@ export class EditorPanelManager {
       }
     });
 
-    panel.onDidDispose(() => this.panels.delete(filePath));
+    panel.onDidDispose(() => { this.panels.delete(filePath); this.noteRefs.delete(filePath); });
   }
 
   private getHtml(
@@ -532,6 +579,26 @@ export class EditorPanelManager {
     var msg = event.data;
     if (msg.type === 'scopeReverted') {
       document.getElementById('fm-scope').value = msg.scope;
+    }
+    if (msg.type === 'revertType') {
+      document.getElementById('fm-type').value = msg.noteType;
+      syncTypeClass();
+    }
+    if (msg.type === 'statusExternallyChanged') {
+      var sel = document.getElementById('fm-status');
+      if (sel) sel.value = msg.status;
+    }
+    if (msg.type === 'frontmatterUpdated') {
+      var fm = msg.frontmatter;
+      var setVal = function(id, val) { var el = document.getElementById(id); if (el) el.value = val || ''; };
+      setVal('fm-title', fm.title);
+      setVal('fm-status', fm.status);
+      setVal('fm-priority', fm.priority);
+      setVal('fm-due', fm.due);
+      setVal('fm-project', fm.project);
+      setVal('fm-tags', Array.isArray(fm.tags) ? fm.tags.join(', ') : (fm.tags || ''));
+      setVal('fm-context', Array.isArray(fm.context) ? fm.context.join(', ') : (fm.context || ''));
+      setVal('fm-recurrence', fm.recurrence || '');
     }
   });
 

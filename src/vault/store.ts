@@ -105,6 +105,13 @@ export class VaultStore {
     const dir = path.dirname(filePath);
     await fs.promises.mkdir(dir, { recursive: true });
 
+    // Canonicalize note type from the top-level folder when known.
+    // This guarantees folder moves (e.g. notes -> reference) persist matching type.
+    const impliedType = noteTypeFromVaultPath(filePath, this.rootDir);
+    if (impliedType) {
+      frontmatter.type = impliedType;
+    }
+
     frontmatter.modified = new Date().toISOString();
     const content = serializeFrontmatter(frontmatter) + body;
     await fs.promises.writeFile(filePath, content, 'utf-8');
@@ -309,4 +316,30 @@ function matchesFilter(fm: NoteFrontmatter, filter: Partial<NoteFrontmatter>): b
     }
   }
   return true;
+}
+
+/** Infer canonical note type from a file's top-level folder under a vault root. */
+function noteTypeFromVaultPath(filePath: string, rootDir: string): NoteFrontmatter['type'] | undefined {
+  const rel = path.relative(path.resolve(rootDir), path.resolve(filePath));
+  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return undefined;
+
+  const top = (rel.split(path.sep)[0] ?? '').toLowerCase();
+  switch (top) {
+    case 'inbox':
+      return 'task';
+    case 'notes':
+    case 'note':
+      return 'note';
+    case 'reference':
+    case 'references':
+      return 'reference';
+    case 'projects':
+    case 'project':
+      return 'project';
+    case 'logs':
+    case 'log':
+      return 'log';
+    default:
+      return undefined;
+  }
 }
