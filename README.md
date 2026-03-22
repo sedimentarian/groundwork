@@ -6,7 +6,7 @@
 \____/_/   \____/\__,_/_/ /_/\__,_/ |__/|__/\____/_/  /_/|_|
 ```
 
-**Your tasks, your context, your grounding.**
+**Your tasks, your context, your ground truth.**
 
 Groundwork is a VSCode extension that builds structured, persistent context — notes, reference knowledge, projects, and tasks that can be directly fed into Copilot, Claude Code, and any AI tool you use. Think of it as layers: raw knowledge at the bottom, structured notes above, actionable tasks at the top, all connected and ready to surface when your AI needs it.
 
