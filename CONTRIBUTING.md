@@ -69,7 +69,7 @@ src/
 1. **Update `src/vault/types.ts`** — add the field to `NoteFrontmatter` interface (or rely on `[key: string]: unknown` for optional fields)
 2. **Update `src/views/editor-panel.ts`** — add an input/select to the frontmatter card HTML, and include it in `gatherFrontmatter()` JS
 3. **Update relevant views** — if the field should affect display (e.g., task-tree coloring, tooltip, briefing), update those files
-4. **Update the Groundwork skill** — if AI tools should know about the field, update `~/.claude/skills/groundwork/SKILL.md`
+4. **Update the Groundwork skill** — if AI tools should know about the field, update `resources/SKILL.md` (the bundled copy installed globally by the Generate commands)
 
 ### Add a New Tree View Filter
 

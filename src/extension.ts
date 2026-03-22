@@ -235,7 +235,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
   async function initWorkspaceVault(wPath: string) {
     await manager.initWorkspace(wPath);
     if (workspaceFolder) {
-      promptGitignore(workspaceFolder.uri.fsPath); // fire-and-forget, don't block
+      promptGitignore(workspaceFolder.uri.fsPath).catch(() => {}); // fire-and-forget
     }
   }
 
@@ -743,56 +743,21 @@ export async function activate(ctx: vscode.ExtensionContext) {
       }
     }),
 
-    // Generate CLAUDE.md
+    // Generate CLAUDE.md (global)
     vscode.commands.registerCommand('groundwork.generateClaudeMd', async () => {
-      if (!workspaceFolder) {
-        vscode.window.showWarningMessage('Open a workspace folder first.');
-        return;
-      }
+      const home = process.env.HOME ?? process.env.USERPROFILE ?? '';
+      const content = await contextGen.generateClaudeMd();
 
-      const content = await contextGen.generateClaudeMd(workspaceFolder.uri.fsPath);
-      const targetPath = path.join(workspaceFolder.uri.fsPath, 'CLAUDE.md');
-      const uri = vscode.Uri.file(targetPath);
-      await vscode.workspace.fs.writeFile(uri, Buffer.from(content, 'utf-8'));
+      // Write ~/.claude/CLAUDE.md
+      const claudeDir = path.join(home, '.claude');
+      const targetPath = path.join(claudeDir, 'CLAUDE.md');
+      await vscode.workspace.fs.createDirectory(vscode.Uri.file(claudeDir));
+      await vscode.workspace.fs.writeFile(vscode.Uri.file(targetPath), Buffer.from(content, 'utf-8'));
 
-      // Also write the skill file so Claude Code can read it
-      const skillDir = path.join(workspaceFolder.uri.fsPath, '.claude', 'skills', 'groundwork');
+      // Write skill file to ~/.claude/skills/groundwork/SKILL.md
+      const skillDir = path.join(claudeDir, 'skills', 'groundwork');
       const skillPath = path.join(skillDir, 'SKILL.md');
-      const extSkillPath = path.join(ctx.extensionPath, '.claude', 'skills', 'groundwork', 'SKILL.md');
-      try {
-        const skillContent = await vscode.workspace.fs.readFile(vscode.Uri.file(extSkillPath));
-        await vscode.workspace.fs.createDirectory(vscode.Uri.file(skillDir));
-        await vscode.workspace.fs.writeFile(vscode.Uri.file(skillPath), skillContent);
-      } catch {
-        // Skill file not bundled — skip silently
-      }
-
-      const doc = await vscode.workspace.openTextDocument(uri);
-      await vscode.window.showTextDocument(doc);
-      vscode.window.showInformationMessage('CLAUDE.md and skill file written.');
-    }),
-
-    // Generate Copilot Instructions
-    vscode.commands.registerCommand('groundwork.generateCopilotInstructions', async () => {
-      if (!workspaceFolder) {
-        vscode.window.showWarningMessage('Open a workspace folder first.');
-        return;
-      }
-
-      const content = await contextGen.generateCopilotInstructions();
-      const targetDir = path.join(workspaceFolder.uri.fsPath, '.github');
-      const targetPath = path.join(targetDir, 'copilot-instructions.md');
-
-      await vscode.workspace.fs.createDirectory(vscode.Uri.file(targetDir));
-      await vscode.workspace.fs.writeFile(
-        vscode.Uri.file(targetPath),
-        Buffer.from(content, 'utf-8')
-      );
-
-      // Also write the skill file so Copilot can read it
-      const skillDir = path.join(targetDir, 'skills', 'groundwork');
-      const skillPath = path.join(skillDir, 'SKILL.md');
-      const extSkillPath = path.join(ctx.extensionPath, '.claude', 'skills', 'groundwork', 'SKILL.md');
+      const extSkillPath = path.join(ctx.extensionPath, 'resources', 'SKILL.md');
       try {
         const skillContent = await vscode.workspace.fs.readFile(vscode.Uri.file(extSkillPath));
         await vscode.workspace.fs.createDirectory(vscode.Uri.file(skillDir));
@@ -803,7 +768,53 @@ export async function activate(ctx: vscode.ExtensionContext) {
 
       const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(targetPath));
       await vscode.window.showTextDocument(doc);
-      vscode.window.showInformationMessage('copilot-instructions.md and skill file written to .github/');
+      vscode.window.showInformationMessage('~/.claude/CLAUDE.md and skill file written.');
+    }),
+
+    // Generate Copilot Instructions (global)
+    vscode.commands.registerCommand('groundwork.generateCopilotInstructions', async () => {
+      const home = process.env.HOME ?? process.env.USERPROFILE ?? '';
+      const content = await contextGen.generateCopilotInstructions();
+
+      // Write instructions and skill to ~/.groundwork/
+      const gwDir = path.join(home, '.groundwork');
+      const targetPath = path.join(gwDir, 'copilot-instructions.md');
+      const skillPath = path.join(gwDir, 'copilot-skill.md');
+
+      await vscode.workspace.fs.writeFile(vscode.Uri.file(targetPath), Buffer.from(content, 'utf-8'));
+
+      // Write skill file alongside
+      const extSkillPath = path.join(ctx.extensionPath, 'resources', 'SKILL.md');
+      try {
+        const skillContent = await vscode.workspace.fs.readFile(vscode.Uri.file(extSkillPath));
+        await vscode.workspace.fs.writeFile(vscode.Uri.file(skillPath), skillContent);
+      } catch {
+        // Skill file not bundled — skip silently
+      }
+
+      const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(targetPath));
+      await vscode.window.showTextDocument(doc);
+
+      // Check if the VS Code setting already points to our file
+      const copilotConfig = vscode.workspace.getConfiguration('github.copilot.chat.codeGeneration');
+      const instructions = copilotConfig.get<unknown[]>('instructions') ?? [];
+      const alreadyConfigured = instructions.some(
+        (i: any) => i?.file && i.file.includes('copilot-instructions.md')
+      );
+
+      if (!alreadyConfigured) {
+        const action = await vscode.window.showInformationMessage(
+          'copilot-instructions.md written to ~/.groundwork/. Add to Copilot settings?',
+          'Add Setting', 'Skip'
+        );
+        if (action === 'Add Setting') {
+          const updated = [...instructions, { file: targetPath }];
+          await copilotConfig.update('instructions', updated, vscode.ConfigurationTarget.Global);
+          vscode.window.showInformationMessage('Copilot instructions setting updated.');
+        }
+      } else {
+        vscode.window.showInformationMessage('copilot-instructions.md updated in ~/.groundwork/');
+      }
     }),
 
     // Daily Briefing

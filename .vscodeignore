@@ -9,3 +9,7 @@ tsconfig.json
 **/*.map
 .groundwork/**
 .claude/**
+.github/**
+*.vsix
+CONTRIBUTING.md
+PRIVACY.md

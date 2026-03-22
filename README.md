@@ -6,15 +6,15 @@
 \____/_/   \____/\__,_/_/ /_/\__,_/ |__/|__/\____/_/  /_/|_|
 ```
 
-**The context layer your AI tools are missing.**
+**Your tasks, your context, your grounding.**
 
-Groundwork is a VSCode extension that builds structured, persistent context — notes, reference knowledge, projects, and tasks — and feeds it directly into Copilot, Claude Code, and any AI tool you use. Think of it as layers: raw knowledge at the bottom, structured notes above, actionable tasks at the top, all connected and ready to surface when your AI needs it.
+Groundwork is a VSCode extension that builds structured, persistent context — notes, reference knowledge, projects, and tasks that can be directly fed into Copilot, Claude Code, and any AI tool you use. Think of it as layers: raw knowledge at the bottom, structured notes above, actionable tasks at the top, all connected and ready to surface when your AI needs it.
 
 ---
 
 ## The Problem
 
-AI coding tools are powerful but stateless. Every session starts from zero. You re-explain your project, your decisions, your current work. Context gets lost between conversations, between tools, between days.
+AI coding tools are powerful but stateless. They need a global and local reference to ensure there's context and a todo list of activities to Get Things Done. Maintaining the relationship with global and local context requires you to copy files, re-explain your projects or guiding principles, and generates scraps of information in various places. Developing global or local (workspace) context allows you to bypass grounding your work each time and allows you to layer from global to local between conversations, between tools, between days.
 
 **Groundwork lays the foundation beneath your AI workflow:**
 
@@ -36,7 +36,7 @@ AI coding tools are powerful but stateless. Every session starts from zero. You 
 └─────────────────────────────────────────┘
 ```
 
-One click compiles any combination of these layers into context your AI can use. Generate `CLAUDE.md` or `copilot-instructions.md` directly from your vault. Start every AI session grounded in what actually matters.
+One click compiles any combination of these layers into context your AI can use. Generate `CLAUDE.md` or `copilot-instructions.md` directly from your vault. Start every session grounded in what actually matters.
 
 ---
 
@@ -51,7 +51,7 @@ One click compiles any combination of these layers into context your AI can use.
 | **WYSIWYG editor** | Rich markdown editing with frontmatter form, toolbar, and type-based file routing |
 | **Dual vault** | Global vault (all workspaces) + workspace vault (per project) |
 | **One-click context** | Compile active tasks and notes into clipboard-ready AI context |
-| **AI file generation** | Auto-generate `CLAUDE.md` and `.github/copilot-instructions.md` from vault |
+| **AI file generation** | Auto-generate `~/.claude/CLAUDE.md` and `~/.groundwork/copilot-instructions.md` from vault |
 | **Staleness detection** | Warns when AI instruction files are older than your vault |
 | **Session tracking** | Logs activity so you always know where you left off |
 
@@ -77,7 +77,7 @@ npm run compile
 
 ### First Steps
 
-1. **Click the Groundwork icon** in the Activity Bar (the strata icon on the left sidebar)
+1. **Click the Groundwork icon** in the Activity Bar (the strata icon on the sidebar)
 2. Three panels appear: **Tasks**, **Vault**, and **Recent Activity**
 3. Click **+** in the Tasks panel header to create your first task
 4. The global vault is created automatically at `~/.groundwork` on first use
@@ -86,24 +86,24 @@ npm run compile
 
 ---
 
-## AI Skills
+## Skills
 
 Groundwork ships with an **agent skill** that teaches AI tools how to interact with your vault directly — creating tasks, running briefings, triaging inbox, and more — all from the CLI without needing the VS Code extension UI.
 
-The canonical skill lives at `.claude/skills/groundwork/SKILL.md`. Both Claude Code and GitHub Copilot auto-discover it when you open a project containing this file.
+The canonical skill lives at `.claude/skills/groundwork/SKILL.md` in this repo. The **Generate** commands install it globally for each tool.
 
-### Auto-discovery
+### Auto-installation via Generate commands
 
-| Tool | Discovers from | How |
+| Command | Writes to | Skill file |
 |---|---|---|
-| **Claude Code** | `.claude/skills/groundwork/SKILL.md` | Automatic — Claude scans `.claude/skills/` |
-| **GitHub Copilot** | `.github/skills/groundwork/SKILL.md` | Automatic — Copilot scans `.github/skills/` |
+| **Generate CLAUDE.md** | `~/.claude/CLAUDE.md` | `~/.claude/skills/groundwork/SKILL.md` |
+| **Generate Copilot Instructions** | `~/.groundwork/copilot-instructions.md` | `~/.groundwork/copilot-skill.md` |
 
-> The Copilot location is a symlink to the Claude skill — there's a single source of truth.
+Claude Code auto-discovers skills in `~/.claude/skills/`. For Copilot, the Generate command offers to add the instructions file to your VS Code user settings automatically.
 
-### Installing the skill in your own projects
+### Manual installation
 
-If you're a **user** of Groundwork (not developing it), install the skill so your AI tools interact with your vault:
+If you prefer to install the skill manually:
 
 **Claude Code** — install globally (works in every project):
 ```bash
@@ -112,14 +112,14 @@ curl -o ~/.claude/skills/groundwork/SKILL.md \
   https://raw.githubusercontent.com/sedimentarian/groundwork/main/.claude/skills/groundwork/SKILL.md
 ```
 
-**GitHub Copilot** — install per-project:
-```bash
-mkdir -p .github/skills/groundwork
-curl -o .github/skills/groundwork/SKILL.md \
-  https://raw.githubusercontent.com/sedimentarian/groundwork/main/.claude/skills/groundwork/SKILL.md
+**GitHub Copilot** — add to VS Code user settings (`settings.json`):
+```json
+{
+  "github.copilot.chat.codeGeneration.instructions": [
+    { "file": "~/.groundwork/copilot-instructions.md" }
+  ]
+}
 ```
-
-Or copy `.claude/skills/groundwork/SKILL.md` from this repo to the appropriate location.
 
 ### What the skill enables
 
@@ -134,7 +134,7 @@ Or copy `.claude/skills/groundwork/SKILL.md` from this repo to the appropriate l
 
 ### Generated instruction files
 
-Use `Groundwork: Generate CLAUDE.md` or `Groundwork: Generate Copilot Instructions` from the Command Palette to create instruction files that reference the skill. These files tell your AI tools about the vault and direct them to use the skill for task management.
+Use `Groundwork: Generate CLAUDE.md` or `Groundwork: Generate Copilot Instructions` from the Command Palette to create global instruction files that reference the skill. These files tell your AI tools about the vault and direct them to use the skill for task management — no per-project setup needed.
 
 > **Tip:** The skill provides *read-write capability* to interact with the vault. Generated files provide *read-only context* about your current work. Use both together for the best experience.
 

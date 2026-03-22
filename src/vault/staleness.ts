@@ -16,14 +16,15 @@ export interface StalenessResult {
  */
 export async function checkStaleness(
   manager: VaultManager,
-  workspacePath: string
+  _workspacePath?: string
 ): Promise<StalenessResult[]> {
   const results: StalenessResult[] = [];
   const vaultMtime = await getLatestVaultMtime(manager);
+  const home = process.env.HOME ?? process.env.USERPROFILE ?? '';
 
   const aiFiles = [
-    path.join(workspacePath, 'CLAUDE.md'),
-    path.join(workspacePath, '.github', 'copilot-instructions.md'),
+    path.join(home, '.claude', 'CLAUDE.md'),
+    path.join(home, '.groundwork', 'copilot-instructions.md'),
   ];
 
   for (const aiFile of aiFiles) {

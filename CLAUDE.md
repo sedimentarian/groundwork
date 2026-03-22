@@ -22,7 +22,7 @@ src/
 └── views/
     ├── task-tree.ts       # Sidebar: tasks grouped by GTD status
     ├── vault-tree.ts      # Sidebar: file browser
-    ├── activity-tree.ts   # Sidebar: recent activity feed
+    ├── session-tree.ts    # Sidebar: recent activity feed
     ├── editor-panel.ts    # WYSIWYG editor webview (uses marked + turndown)
     └── briefing-panel.ts  # Daily briefing webview (AI summary via vscode.lm API)
 ```
@@ -41,7 +41,7 @@ The editor and briefing views use VS Code webview panels with inline HTML/CSS/JS
 ### AI Integration
 - **Daily briefing summary**: Uses `vscode.lm.selectChatModels()` for AI-generated summaries with template fallback
 - **Context compilation**: Compiles selected vault content into prompt-ready blocks for AI tools
-- **CLAUDE.md / copilot-instructions generation**: Exports active context as instruction files
+- **CLAUDE.md / copilot-instructions generation**: Exports active context as global instruction files (`~/.claude/CLAUDE.md`, `~/.groundwork/copilot-instructions.md`)
 
 ## Development
 
@@ -67,7 +67,7 @@ code --install-extension groundwork-*.vsix
 
 - Compiles clean
 - No test suite yet (priority target: `src/recurrence.ts` pure functions)
-- Not yet published to marketplace (needs publisher account `groundwork-dev`)
+- Not yet published to marketplace (publisher: `sedimentarian`)
 - Active backlog in `~/.groundwork/inbox/` — use the groundwork skill to view
 
 ## Conventions

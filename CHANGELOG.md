@@ -12,8 +12,10 @@
 - **Delete guards** — only archived vault files or done/cancelled tasks can be deleted
 - **Collapse/expand all** — collapse or expand all task groups and vault folders
 - **.gitignore prompt** — prompts to add `.groundwork/` to `.gitignore` when initializing a workspace vault in a git repo
-- **AI agent skill** — ships a skill file at `.claude/skills/groundwork/SKILL.md` for Claude Code and Copilot auto-discovery
+- **AI agent skill** — bundles a skill file (`resources/SKILL.md`) installed globally by the Generate commands
 - **Webview accessibility** — aria labels, keyboard navigation, semantic HTML in editor and briefing panels
+- **Global context generation** — `Generate CLAUDE.md` writes to `~/.claude/CLAUDE.md`; `Generate Copilot Instructions` writes to `~/.groundwork/copilot-instructions.md` with auto-configuration of VS Code setting
+- **Optimized skill task listing** — skill recommends single `grep` command for vault listing instead of per-file reads
 
 ### Fixed
 - Task drag-and-drop now correctly persists status changes (payload marshalling, sort-order race, editor panel stale state)

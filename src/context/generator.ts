@@ -81,8 +81,8 @@ export class ContextGenerator {
     return lines.join('\n');
   }
 
-  /** Generate CLAUDE.md content from vault knowledge */
-  async generateClaudeMd(projectPath: string): Promise<string> {
+  /** Generate ~/.claude/CLAUDE.md content from vault knowledge */
+  async generateClaudeMd(): Promise<string> {
     const activeContext = await this.compileActiveContext();
     const referenceDocs = await this.manager.queryNotes({ type: 'reference' });
 
@@ -94,7 +94,7 @@ export class ContextGenerator {
       '## Groundwork Vault',
       '',
       'This project uses **Groundwork** for task and knowledge management.',
-      'A skill file is available at `.claude/skills/groundwork/SKILL.md` — use it to interact with the vault.',
+      'A skill file is available at `~/.claude/skills/groundwork/SKILL.md` — use it to interact with the vault.',
       '',
       'When the user mentions tasks, todos, inbox, briefing, capturing ideas, or asks about what they\'re working on,',
       'invoke the `groundwork` skill before responding. The skill provides read/write access to the vault:',
@@ -122,7 +122,7 @@ export class ContextGenerator {
     return lines.join('\n');
   }
 
-  /** Generate .github/copilot-instructions.md content */
+  /** Generate ~/.groundwork/copilot-instructions.md content */
   async generateCopilotInstructions(): Promise<string> {
     const activeContext = await this.compileActiveContext();
 
@@ -134,7 +134,7 @@ export class ContextGenerator {
       '## Groundwork Vault',
       '',
       'This project uses **Groundwork** for task and knowledge management.',
-      'A skill file is available at `.github/skills/groundwork/SKILL.md` — use it to interact with the vault.',
+      'A skill file is available at `~/.groundwork/copilot-skill.md` — use it to interact with the vault.',
       '',
       'When the user mentions tasks, todos, inbox, briefing, capturing ideas, or asks about what they\'re working on,',
       'read the skill file and follow its instructions. The skill provides read/write access to the vault:',

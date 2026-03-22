@@ -6,6 +6,10 @@
   "publisher": "sedimentarian",
   "license": "GPL-3.0-only",
   "icon": "images/icon.png",
+  "galleryBanner": {
+    "color": "#1E1E1E",
+    "theme": "dark"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/sedimentarian/groundwork"
