@@ -3,7 +3,7 @@
 ## Dev Setup
 
 ```bash
-git clone https://github.com/lwbailey/groundwork
+git clone https://github.com/sedimentarian/groundwork
 cd groundwork
 npm install
 npm run compile

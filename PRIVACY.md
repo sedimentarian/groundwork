@@ -32,4 +32,4 @@ Groundwork does not integrate with or send data to any third-party services. It 
 
 ## Contact
 
-If you have questions about this privacy policy, please open an issue on the [GitHub repository](https://github.com/lwbailey/groundwork).
+If you have questions about this privacy policy, please open an issue on the [GitHub repository](https://github.com/sedimentarian/groundwork).
