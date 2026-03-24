@@ -661,6 +661,81 @@ export class EditorPanelManager {
     }
   });
 
+  // ── Auto-link URLs on Space/Enter after typing ──────────────────────────
+  editorEl.addEventListener('keydown', function(e) {
+    if (e.key !== ' ' && e.key !== 'Enter') return;
+    var sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) return;
+    var node = sel.anchorNode;
+    if (!node || node.nodeType !== Node.TEXT_NODE) return;
+    // Don't auto-link inside existing anchors
+    if (node.parentNode && node.parentNode.nodeName === 'A') return;
+
+    var text = node.textContent.substring(0, sel.anchorOffset);
+    var urlRegex = /(https?:\\/\\/[^\\s<>"')\\]]+)$/;
+    var match = text.match(urlRegex);
+    if (!match) return;
+
+    e.preventDefault();
+    var urlStart = match.index;
+    var urlEnd = urlStart + match[0].length;
+    var range = document.createRange();
+    range.setStart(node, urlStart);
+    range.setEnd(node, urlEnd);
+    var a = document.createElement('a');
+    a.href = match[0];
+    a.textContent = match[0];
+    range.deleteContents();
+    range.insertNode(a);
+
+    // Insert the space/newline after the link and place caret there
+    var afterNode = document.createTextNode(e.key === 'Enter' ? '\\n' : ' ');
+    a.parentNode.insertBefore(afterNode, a.nextSibling);
+    var r2 = document.createRange();
+    r2.setStart(afterNode, afterNode.length);
+    r2.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(r2);
+    if (e.key === 'Enter') document.execCommand('insertParagraph');
+  });
+
+  // ── Auto-link pasted plain-text URLs ────────────────────────────────────
+  editorEl.addEventListener('paste', function(e) {
+    var text = (e.clipboardData || window.clipboardData).getData('text/plain');
+    if (!text) return;
+    // Only intercept if the pasted content is a bare URL
+    if (/^https?:\\/\\/[^\\s]+$/.test(text.trim())) {
+      e.preventDefault();
+      var sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0) return;
+      var range = sel.getRangeAt(0);
+
+      if (!range.collapsed) {
+        // Text is selected — wrap it as a link
+        var a = document.createElement('a');
+        a.href = text.trim();
+        a.appendChild(range.extractContents());
+        range.insertNode(a);
+        var r = document.createRange();
+        r.setStartAfter(a);
+        r.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(r);
+      } else {
+        // No selection — insert URL as a clickable link
+        var a = document.createElement('a');
+        a.href = text.trim();
+        a.textContent = text.trim();
+        range.insertNode(a);
+        var r = document.createRange();
+        r.setStartAfter(a);
+        r.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(r);
+      }
+    }
+  });
+
   // ── Type-adaptive fields ─────────────────────────────────────────────────
   var typeSelect = document.getElementById('fm-type');
   function syncTypeClass() {
