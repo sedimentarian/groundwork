@@ -652,6 +652,15 @@ export class EditorPanelManager {
   // Close popover on editor scroll (position:fixed won't follow)
   editorEl.addEventListener('scroll', hideLinkPopover);
 
+  // ── Click existing link to edit ─────────────────────────────────────────
+  editorEl.addEventListener('click', function(e) {
+    var anchor = e.target.closest('a');
+    if (anchor && editorEl.contains(anchor)) {
+      e.preventDefault();
+      showLinkPopover(anchor);
+    }
+  });
+
   // ── Type-adaptive fields ─────────────────────────────────────────────────
   var typeSelect = document.getElementById('fm-type');
   function syncTypeClass() {
