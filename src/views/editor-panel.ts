@@ -530,6 +530,12 @@ export class EditorPanelManager {
 
 <div id="editor" contenteditable="true" spellcheck="true" role="textbox" aria-multiline="true" aria-label="Document body"></div>
 
+<div id="link-popover" role="dialog" aria-label="Insert link">
+  <input id="link-url" type="url" placeholder="https://example.com" aria-label="URL" />
+  <button id="link-apply">Apply</button>
+  <button id="link-remove" class="link-remove" title="Remove link" aria-label="Remove link" style="display:none;">\u2715</button>
+</div>
+
 <script nonce="${nonce}" src="${markedUri}"></script>
 <script nonce="${nonce}" src="${turndownUri}"></script>
 <script nonce="${nonce}">
