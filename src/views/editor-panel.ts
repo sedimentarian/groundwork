@@ -388,6 +388,51 @@ export class EditorPanelManager {
     }
     #editor pre code { background: none; border: none; padding: 0; }
     #editor a { color: var(--accent); }
+    /* ── Link popover ── */
+    #link-popover {
+      display: none;
+      position: fixed;
+      z-index: 100;
+      background: var(--input-bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 6px;
+      gap: 4px;
+      align-items: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    }
+    #link-popover.visible { display: flex; }
+    #link-popover input {
+      background: var(--bg);
+      color: var(--input-fg);
+      border: 1px solid var(--input-border);
+      border-radius: 3px;
+      padding: 3px 6px;
+      font-size: 12px;
+      font-family: inherit;
+      width: 240px;
+      outline: none;
+    }
+    #link-popover input:focus { border-color: var(--accent); }
+    #link-popover button {
+      background: var(--btn-bg);
+      color: var(--btn-fg);
+      border: none;
+      border-radius: 3px;
+      padding: 3px 8px;
+      cursor: pointer;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    #link-popover button:hover { background: var(--btn-hover); }
+    #link-popover .link-remove {
+      background: transparent;
+      color: var(--fg);
+      opacity: 0.7;
+      padding: 3px 4px;
+      font-size: 14px;
+    }
+    #link-popover .link-remove:hover { opacity: 1; }
     #editor hr { border: none; border-top: 1px solid var(--border); margin: 1em 0; }
     #editor table { border-collapse: collapse; margin: .5em 0; width: 100%; }
     #editor th, #editor td { border: 1px solid var(--border); padding: 5px 10px; }
