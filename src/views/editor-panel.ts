@@ -524,7 +524,7 @@ export class EditorPanelManager {
   <button data-cmd="formatBlock" data-val="blockquote" title="Quote" aria-label="Block quote">❝</button>
   <button data-code title="Inline code" aria-label="Inline code">{ }</button>
   <div class="tb-sep" role="separator"></div>
-  <button data-link title="Insert link" aria-label="Insert link">🔗</button>
+  <button data-link title="Insert link (⌘K)" aria-label="Insert link">🔗</button>
   <button data-hr title="Horizontal rule" aria-label="Horizontal rule">—</button>
 </div>
 
@@ -857,6 +857,19 @@ export class EditorPanelManager {
     if ((e.metaKey || e.ctrlKey) && e.key === 'i') {
       e.preventDefault();
       document.execCommand('italic');
+    }
+    if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+      e.preventDefault();
+      var sel = window.getSelection();
+      var anchorEl = sel && sel.anchorNode
+        ? (sel.anchorNode.nodeType === 3 ? sel.anchorNode.parentElement : sel.anchorNode)
+        : null;
+      var anchor = anchorEl ? anchorEl.closest('a') : null;
+      if (anchor && editorEl.contains(anchor)) {
+        showLinkPopover(anchor);
+      } else {
+        showLinkPopover(null);
+      }
     }
   });
 
