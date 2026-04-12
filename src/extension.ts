@@ -147,7 +147,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
 
   // Tree views
   const vaultTree = new VaultTreeProvider(manager);
-  const taskTree = new TaskTreeProvider(manager);
+  const taskTree = new TaskTreeProvider(manager, db);
   const sessionTree = new SessionTreeProvider(manager);
 
   const refreshAll = () => {
@@ -157,7 +157,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
   };
 
   editorPanels = new EditorPanelManager(manager, ctx.extensionUri, refreshAll, initWorkspaceVault);
-  briefingPanel = new BriefingPanelManager(manager, ctx.extensionUri, refreshAll);
+  briefingPanel = new BriefingPanelManager(manager, ctx.extensionUri, refreshAll, db);
   weeklyReviewPanel = new WeeklyReviewPanelManager(manager, ctx.extensionUri, refreshAll);
 
   // Tasks tree view — createTreeView (not registerTreeDataProvider) for drag-and-drop support

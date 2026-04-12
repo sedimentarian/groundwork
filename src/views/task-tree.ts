@@ -1,6 +1,8 @@
 import * as vscode from 'vscode';
 import { VaultManager } from '../vault/manager';
 import { ParsedNote, TaskStatus, GTD_LISTS } from '../vault/types';
+import { GroundworkDB } from '../db/index';
+import { listTasks, TaskFilter as DbTaskFilter } from '../db/queries';
 
 export interface TaskFilter {
   tag?: string;
@@ -40,7 +42,7 @@ export class TaskTreeProvider implements vscode.TreeDataProvider<TaskTreeItem>,
   /** Callback invoked when a drop changes a task — lets extension.ts log + refresh */
   onTaskDropped?: (filePath: string, detail: string) => void;
 
-  constructor(private manager: VaultManager) {}
+  constructor(private manager: VaultManager, private db?: GroundworkDB) {}
 
   // ── Filter state ───────────────────────────────────────────────────────────
 
@@ -388,24 +390,55 @@ export class TaskTreeProvider implements vscode.TreeDataProvider<TaskTreeItem>,
 
   async getChildren(element?: TaskTreeItem): Promise<TaskTreeItem[]> {
     if (!element) {
-      let allTasks = await this.manager.queryNotes({ type: 'task' });
-
-      // Apply all active filters
-      allTasks = applyFilters(allTasks, this._filter);
+      const order: TaskStatus[] = ['inbox', 'next', 'active', 'waiting', 'someday', 'done', 'cancelled'];
 
       this.cache.clear();
-      for (const task of allTasks) {
-        const status = (task.frontmatter.status as TaskStatus) ?? 'inbox';
-        if (!this.cache.has(status)) this.cache.set(status, []);
-        this.cache.get(status)!.push(task);
+
+      if (this.db?.isOpen) {
+        // ── SQLite path: query DB for each status group ──
+        for (const status of order) {
+          const dbFilter: DbTaskFilter = {
+            status,
+            ...(this._filter.tag ? { tag: this._filter.tag } : {}),
+            ...(this._filter.context ? { context: this._filter.context } : {}),
+            ...(this._filter.project ? { project: this._filter.project } : {}),
+          };
+          const rows = listTasks(this.db, dbFilter);
+
+          // Convert NoteRow → ParsedNote for compatibility with rendering
+          const tasks: ParsedNote[] = [];
+          for (const row of rows) {
+            try {
+              const note = await this.manager.readNote(row.path);
+              tasks.push(note);
+            } catch { /* file may have been removed */ }
+          }
+
+          // Apply text search filter (requires body content, not in SQL)
+          const searched = this._filter.search
+            ? applyFilters(tasks, { search: this._filter.search })
+            : tasks;
+
+          if (searched.length > 0) {
+            this.cache.set(status, searched);
+          }
+        }
+        // Sorting already done by SQL ORDER BY
+      } else {
+        // ── Fallback: original filesystem path ──
+        let allTasks = await this.manager.queryNotes({ type: 'task' });
+        allTasks = applyFilters(allTasks, this._filter);
+
+        for (const task of allTasks) {
+          const status = (task.frontmatter.status as TaskStatus) ?? 'inbox';
+          if (!this.cache.has(status)) this.cache.set(status, []);
+          this.cache.get(status)!.push(task);
+        }
+        for (const [, tasks] of this.cache) {
+          tasks.sort(sortTasks);
+        }
       }
 
-      // Sort tasks within each group by sort-order, then priority, then title
-      for (const [, tasks] of this.cache) {
-        tasks.sort(sortTasks);
-      }
-
-      const order: TaskStatus[] = ['inbox', 'next', 'active', 'waiting', 'someday', 'done', 'cancelled'];
       if (this._dragInProgress) {
         // Show all groups (including empty) as drop targets during drag
         return order.map(s => new TaskGroup(s, this.cache.get(s) ?? []));

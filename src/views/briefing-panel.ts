@@ -3,6 +3,8 @@ import * as path from 'path';
 import { VaultManager } from '../vault/manager';
 import { ParsedNote } from '../vault/types';
 import { isRecurrenceDue, buildCloneFrontmatter } from '../recurrence';
+import { GroundworkDB } from '../db/index';
+import { taskStats as dbTaskStats, listTasks } from '../db/queries';
 
 export class BriefingPanelManager {
   private panel: vscode.WebviewPanel | undefined;
@@ -11,7 +13,8 @@ export class BriefingPanelManager {
   constructor(
     private manager: VaultManager,
     private extensionUri: vscode.Uri,
-    onAction?: () => void
+    onAction?: () => void,
+    private db?: GroundworkDB
   ) {
     this.onAction = onAction;
   }
@@ -211,6 +214,17 @@ Tasks:
 
   /** Summary string for status bar */
   async getStatusSummary(): Promise<{ active: number; overdue: number; inbox: number }> {
+    // Use DB stats when available — avoids reading all files
+    if (this.db?.isOpen) {
+      const stats = dbTaskStats(this.db);
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const overdueTasks = listTasks(this.db, {}).filter(r =>
+        r.due && r.due < todayStr && r.status !== 'done' && r.status !== 'cancelled'
+      );
+      return { active: stats.active ?? 0, overdue: overdueTasks.length, inbox: stats.inbox ?? 0 };
+    }
+
+    // Fallback: filesystem path
     const tasks = await this.manager.queryNotes({ type: 'task' });
     const now = new Date();
     let activeCount = 0;
