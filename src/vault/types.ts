@@ -10,6 +10,9 @@ export interface NoteFrontmatter {
   modified?: string;     // ISO date
   due?: string;          // ISO date
   priority?: 'high' | 'medium' | 'low';
+  recurrence?: string;         // daily | weekday | weekly | monthly | quarterly
+  'recurrence-anchor'?: string; // ISO date — anchor for interval calculation
+  'sort-order'?: number;       // Numeric sort key for custom ordering
   [key: string]: unknown;
 }
 

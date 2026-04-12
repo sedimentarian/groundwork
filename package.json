@@ -510,5 +510,8 @@
     "turndown": "^7.2.2",
     "typescript": "^5.3.3",
     "vitest": "^4.1.0"
+  },
+  "dependencies": {
+    "sql.js": "^1.14.1"
   }
 }
