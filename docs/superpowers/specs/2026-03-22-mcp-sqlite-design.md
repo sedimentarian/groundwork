@@ -523,6 +523,9 @@ src/
 │   ├── server.ts          -- MCP server setup, transport, tool registration
 │   ├── tools.ts           -- tool handler implementations (11 tools)
 │   └── shorthand.ts       -- N1/A2/S3 resolution from DB
+├── llm/
+│   ├── client.ts          -- OpenAI-compatible HTTP client (fetch-based)
+│   └── summarize.ts       -- prompt templates, priority chain (VS Code LM → local → template)
 ├── vault/
 │   ├── store.ts           -- writeNote() gains write-through to DB
 │   ├── manager.ts         -- query methods delegate to DB; file ops unchanged
@@ -590,22 +593,53 @@ No build changes needed. `sql.js` is pure JS + WASM. The WASM binary needs to be
 
 **Testable independently:** Yes — the DB is an invisible optimization. If it breaks, delete `.index.db` and it rebuilds.
 
-### Phase 2 — MCP server (v0.5.0)
+### Phase 2 — MCP server + local LLM (v0.5.0)
 
-**Scope:** Add `src/mcp/`, register 10 tools, write new slim SKILL.md.
+**Scope:** Add `src/mcp/`, register 11 tools, write new slim SKILL.md. Add local LLM support for AI summarization.
 
 **What ships:**
 - MCP server hosted in extension process
 - 11 structured tools (list_tasks, create_task, update_note, search, etc.)
 - New SKILL.md (~40 lines) referencing MCP tools
 - Context generator produces MCP-aware instructions
+- Local LLM client (`src/llm/`) for AI summarization (briefing, weekly review)
+
+**Local LLM integration:**
+
+All three major local LLM providers expose an OpenAI-compatible API (`/v1/chat/completions`). One HTTP client covers all of them:
+
+| Provider | Default endpoint |
+|---|---|
+| Ollama | `http://localhost:11434/v1/chat/completions` |
+| Docker Model Runner | `http://localhost:12434/v1/chat/completions` |
+| LM Studio | `http://localhost:1234/v1/chat/completions` |
+
+New VS Code settings:
+- `groundwork.llm.endpoint` — URL of the local OpenAI-compatible API (default: empty = disabled)
+- `groundwork.llm.model` — model name to request (e.g. `llama3.2`, `phi-3`, `gemma`)
+
+Summarization priority chain:
+1. **VS Code LM API** (Copilot) — if available and `selectChatModels()` returns a model
+2. **Local LLM endpoint** — if `groundwork.llm.endpoint` is configured and reachable
+3. **Template fallback** — always works, no AI needed
+
+The `daily_briefing` and `weekly_review` MCP tools use this same priority chain. The briefing panel webview also uses it (replacing the current Copilot-only path).
+
+New source:
+```
+src/llm/
+├── client.ts      -- OpenAI-compatible HTTP client (fetch-based, no SDK needed)
+└── summarize.ts   -- prompt templates for briefing/review, priority chain logic
+```
+
+No new dependencies — uses Node's built-in `fetch` against the local endpoint.
 
 **What doesn't change:**
 - DB layer (proven in Phase 1)
 - Editor panel, session tracker
 - Vault file format
 
-**User impact:** AI tools interact via structured calls instead of grep. Dramatically simpler and more reliable. Old grep-based skill still works as fallback.
+**User impact:** AI tools interact via structured calls instead of grep. Dramatically simpler and more reliable. Old grep-based skill still works as fallback. Users with a local LLM get AI-powered briefings without Copilot.
 
 ### Phase 3 — Cleanup (v0.6.0)
 
@@ -673,6 +707,7 @@ If users are on older VS Code versions, the SSE fallback (localhost endpoint + `
 | DB gets out of sync with files | Medium | File watcher + write-through + startup reindex; user can delete `.index.db` |
 | VS Code MCP API changes (still evolving) | Medium | Phase 2 is independent of Phase 1; can adapt transport layer |
 | Extension activation slows due to DB init | Low | Reindex is async; tree views show loading state until ready |
+| Local LLM endpoint unavailable or slow | Low | Priority chain falls through to template; configurable timeout (5s default) |
 | `.vsix` size increase (120KB → 1.4MB) | Low | Still well within normal range for VS Code extensions |
 
 ---
