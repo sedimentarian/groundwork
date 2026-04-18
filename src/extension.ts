@@ -1106,6 +1106,38 @@ export async function activate(ctx: vscode.ExtensionContext) {
       }
     }, 3000);
   }
+
+  // --- Register MCP server for AI tool discovery (VS Code 1.99+) ---
+  try {
+    if (typeof vscode.lm?.registerMcpServerDefinitionProvider === 'function') {
+      const mcpEmitter = new vscode.EventEmitter<void>();
+      ctx.subscriptions.push(
+        vscode.lm.registerMcpServerDefinitionProvider('groundwork', {
+          onDidChangeMcpServerDefinitions: mcpEmitter.event,
+          provideMcpServerDefinitions: async () => {
+            const serverScript = path.join(ctx.extensionPath, 'out', 'mcp', 'server.js');
+            const mcpArgs = [serverScript, '--global-path', globalPath];
+            if (manager.workspacePath) {
+              mcpArgs.push('--workspace-path', manager.workspacePath);
+            }
+            return [
+              new vscode.McpStdioServerDefinition(
+                'Groundwork Vault',
+                'node',
+                mcpArgs,
+                undefined,
+                '0.5.0',
+              ),
+            ];
+          },
+          resolveMcpServerDefinition: async (server) => server,
+        })
+      );
+      out.appendLine('[Groundwork] MCP server registered');
+    }
+  } catch {
+    out.appendLine('[Groundwork] MCP server registration not available (VS Code < 1.99)');
+  }
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

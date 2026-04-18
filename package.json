@@ -494,7 +494,13 @@
           "description": "Automatically open the Daily Briefing once per day when VSCode starts"
         }
       }
-    }
+    },
+    "mcpServerDefinitionProviders": [
+      {
+        "id": "groundwork",
+        "label": "Groundwork Vault"
+      }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
