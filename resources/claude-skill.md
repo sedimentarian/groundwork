@@ -333,6 +333,18 @@ The login form throws a 500 error when the email contains a plus sign.
 Likely an encoding issue in the auth middleware.
 ```
 
+### Create a note
+
+Before creating, ask the user: "Would you like to add any details or context to this note? (press Enter to skip)"
+- If the user provides context, generate a well-structured markdown body from it and include it as the file body.
+- If the user says no, none, or just presses Enter, create with an empty body.
+- Exception: if the user said "just capture it", "quick note", or similar, skip the question and create immediately.
+
+1. Generate a filename slug from the title: lowercase, replace spaces with hyphens, remove special characters
+2. Write to the appropriate directory (`notes/`, `decisions/`, `projects/`, `reference/`, `logs/`)
+3. Use the current ISO timestamp for `created`
+4. Run **Ensure DB** to sync the new file into the index
+
 ### Update a task
 
 Read the file, modify the frontmatter field(s), write it back. Always update

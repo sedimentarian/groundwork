@@ -260,6 +260,18 @@ Before creating, ask the user: "Would you like to add any details or context to 
 3. Use current ISO timestamp for `created`
 4. Run **Ensure DB** to sync into the index
 
+### Create a note
+
+Before creating, ask the user: "Would you like to add any details or context to this note? (press Enter to skip)"
+- If the user provides context, generate a well-structured markdown body from it and include it as the file body.
+- If the user says no, none, or just presses Enter, create with an empty body.
+- Exception: if the user said "just capture it", "quick note", or similar, skip the question and create immediately.
+
+1. Slug the title: lowercase, hyphens, no special chars → `my-note.md`
+2. Write to the appropriate directory (`notes/`, `decisions/`, `projects/`, `reference/`, `logs/`)
+3. Use current ISO timestamp for `created`
+4. Run **Ensure DB** to sync into the index
+
 ### Update a task
 
 Read the file, update frontmatter, write back with updated `modified` timestamp.
