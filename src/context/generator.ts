@@ -59,12 +59,16 @@ export class ContextGenerator {
       for (const row of rows) {
         const project = row.project ?? 'Unassigned';
         if (!byProject.has(project)) byProject.set(project, []);
+        let body = row.body ?? '';
+        if (!body && row.path) {
+          try { body = (await this.manager.readNote(row.path)).body; } catch { /* skip */ }
+        }
         byProject.get(project)!.push({
           scope: row.scope,
           status: row.status,
           title: row.title ?? row.path,
           context: row.context,
-          body: row.body ?? '',
+          body,
         });
       }
     } else {

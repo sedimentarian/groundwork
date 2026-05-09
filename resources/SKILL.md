@@ -157,7 +157,7 @@ def upsert_file(conn, md_file, scope):
     except:
         return
     fm, body = parse_frontmatter(text)
-    body_hash = hashlib.sha256(body.encode()).hexdigest()[:16]
+    body_hash = hashlib.sha256(text.encode()).hexdigest()[:16]
     existing = conn.execute("SELECT body_hash FROM notes WHERE path=?", (str(md_file),)).fetchone()
     if existing and existing[0] == body_hash:
         return

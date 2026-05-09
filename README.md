@@ -143,7 +143,7 @@ Find your extension path in VS Code: **Extensions** → Groundwork → **⚙ gea
 ```bash
 mkdir -p ~/.claude/skills/groundwork
 curl -o ~/.claude/skills/groundwork/SKILL.md \
-  https://raw.githubusercontent.com/sedimentarian/groundwork/main/resources/SKILL.md
+  https://raw.githubusercontent.com/sedimentarian/groundwork/main/resources/claude-skill.md
 ```
 
 **GitHub Copilot** — add to VS Code user settings (`settings.json`):

@@ -857,14 +857,20 @@ export async function activate(ctx: vscode.ExtensionContext) {
         let settings: Record<string, unknown> = {};
         try {
           const raw = await vscode.workspace.fs.readFile(vscode.Uri.file(claudeSettingsPath));
-          settings = JSON.parse(Buffer.from(raw).toString('utf-8'));
+          const parsed = JSON.parse(Buffer.from(raw).toString('utf-8'));
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            settings = parsed as Record<string, unknown>;
+          }
         } catch { /* file doesn't exist or isn't valid JSON — start fresh */ }
 
-        const mcpServers = (settings.mcpServers ?? {}) as Record<string, unknown>;
-        mcpServers['groundwork'] = {
-          command: 'node',
-          args: [serverScript, '--global-path', globalPath],
-        };
+        const existingMcp = settings.mcpServers;
+        const mcpServers: Record<string, unknown> =
+          existingMcp && typeof existingMcp === 'object' && !Array.isArray(existingMcp)
+            ? { ...(existingMcp as Record<string, unknown>) }
+            : {};
+        const mcpArgs = [serverScript, '--global-path', globalPath];
+        if (manager.workspacePath) { mcpArgs.push('--workspace-path', manager.workspacePath); }
+        mcpServers['groundwork'] = { command: 'node', args: mcpArgs };
         settings.mcpServers = mcpServers;
         await vscode.workspace.fs.writeFile(
           vscode.Uri.file(claudeSettingsPath),
