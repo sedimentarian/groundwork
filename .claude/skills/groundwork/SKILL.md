@@ -304,6 +304,11 @@ N3. Update API docs [medium] 📂
 
 ### Create a task
 
+Before creating, ask the user: "Would you like to add any details or context to this task? (press Enter to skip)"
+- If the user provides context, generate a well-structured markdown body from it and include it as the file body.
+- If the user says no, none, or just presses Enter, create with an empty body.
+- Exception: if the user said "just capture it", "quick note", or similar, skip the question and create immediately.
+
 1. Generate a filename slug from the title: lowercase, replace spaces with hyphens,
    remove special characters. Example: "Fix login bug" → `fix-login-bug.md`
 2. Write to `~/.groundwork/inbox/` (default) or the appropriate status directory

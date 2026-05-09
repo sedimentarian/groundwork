@@ -250,6 +250,11 @@ Numbers are ephemeral — recalculate each listing. Accept references like "mark
 
 ### Create a task
 
+Before creating, ask the user: "Would you like to add any details or context to this task? (press Enter to skip)"
+- If the user provides context, generate a well-structured markdown body from it and include it as the file body.
+- If the user says no, none, or just presses Enter, create with an empty body.
+- Exception: if the user said "just capture it", "quick note", or similar, skip the question and create immediately.
+
 1. Slug the title: lowercase, hyphens, no special chars → `fix-login-bug.md`
 2. Write to `~/.groundwork/inbox/` (or appropriate directory)
 3. Use current ISO timestamp for `created`

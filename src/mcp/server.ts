@@ -184,7 +184,13 @@ async function main() {
   server.registerTool(
     'create_task',
     {
-      description: 'Create a new task in the vault.',
+      description: `Create a new task in the vault.
+
+Before calling this tool, ask the user: "Would you like to add any details or context to this task? (press Enter to skip)"
+- If the user provides context, generate a well-structured markdown body from it and include it in the \`body\` parameter.
+- If the user says no, none, or just presses Enter, call this tool without a \`body\`.
+
+Exception: if the user said "just capture it", "quick note", or similar, skip the question and create immediately with no body.`,
       inputSchema: {
         title: z.string().describe('Task title'),
         status: z.enum(['inbox', 'next', 'active', 'waiting', 'someday']).optional().describe('GTD status (default: inbox)'),
@@ -193,7 +199,7 @@ async function main() {
         project: z.string().optional().describe('Project name'),
         tags: z.array(z.string()).optional().describe('Tags'),
         context: z.array(z.string()).optional().describe('GTD contexts (e.g. @computer)'),
-        body: z.string().optional().describe('Task body (markdown)'),
+        body: z.string().optional().describe('Task body (markdown). Generate from context the user provides. Omit if the user declines to add context.'),
         scope: z.enum(['global', 'workspace']).optional().describe('Vault scope (default: workspace if available)'),
       },
     },
@@ -222,7 +228,9 @@ async function main() {
       try {
         await writeAndSync(filePath, fm, params.body ?? '');
         const shorthand = shorthandFor(filePath, fm.status ?? 'inbox');
-        return ok({ path: filePath, shorthand });
+        const result: Record<string, unknown> = { path: filePath, shorthand };
+        if (!params.body) { result.bodyWasEmpty = true; result.hint = 'Body is empty — call update_note with a body if the user wants to add context.'; }
+        return ok(result);
       } catch (err) {
         return writeFailed(`Failed to create task: ${err}`);
       }
@@ -233,11 +241,17 @@ async function main() {
   server.registerTool(
     'create_note',
     {
-      description: 'Create a new note, decision, project, or reference document.',
+      description: `Create a new note, decision, project, or reference document in the vault.
+
+Before calling this tool, ask the user: "Would you like to add any details or context to this note? (press Enter to skip)"
+- If the user provides context, generate a well-structured markdown body from it and include it in the \`body\` parameter.
+- If the user says no, none, or just presses Enter, call this tool without a \`body\`.
+
+Exception: if the user said "just capture it", "quick note", or similar, skip the question and create immediately with no body.`,
       inputSchema: {
         title: z.string().describe('Note title'),
         type: z.enum(['note', 'decision', 'project', 'reference', 'log']).describe('Note type'),
-        body: z.string().optional().describe('Note body (markdown)'),
+        body: z.string().optional().describe('Note body (markdown). Generate from context the user provides. Omit if the user declines to add context.'),
         project: z.string().optional().describe('Project name'),
         tags: z.array(z.string()).optional().describe('Tags'),
         scope: z.enum(['global', 'workspace']).optional().describe('Vault scope'),
@@ -266,7 +280,9 @@ async function main() {
 
       try {
         await writeAndSync(filePath, fm, params.body ?? '');
-        return ok({ path: filePath });
+        const result: Record<string, unknown> = { path: filePath };
+        if (!params.body) { result.bodyWasEmpty = true; result.hint = 'Body is empty — call update_note with a body if the user wants to add context.'; }
+        return ok(result);
       } catch (err) {
         return writeFailed(`Failed to create note: ${err}`);
       }
