@@ -841,7 +841,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
       // Write skill file to ~/.claude/skills/groundwork/SKILL.md
       const skillDir = path.join(claudeDir, 'skills', 'groundwork');
       const skillPath = path.join(skillDir, 'SKILL.md');
-      const extSkillPath = path.join(ctx.extensionPath, 'resources', 'SKILL.md');
+      const extSkillPath = path.join(ctx.extensionPath, 'resources', 'claude-skill.md');
       try {
         const skillContent = await vscode.workspace.fs.readFile(vscode.Uri.file(extSkillPath));
         await vscode.workspace.fs.createDirectory(vscode.Uri.file(skillDir));
