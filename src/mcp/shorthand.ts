@@ -1,3 +1,4 @@
+import * as path from 'path';
 import { GroundworkDB } from '../db/index';
 import { TaskStatus } from '../vault/types';
 
@@ -81,7 +82,6 @@ export function resolveRef(
   if (shorthand) return resolveShorthand(db, ref);
 
   // Relative path — try workspace first, then global
-  const path = require('path');
   if (workspaceRoot) {
     const wsPath = path.join(workspaceRoot, ref);
     const exists = db.get('SELECT path FROM notes WHERE path = ?', [wsPath]);
