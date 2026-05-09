@@ -12,8 +12,19 @@ description: >
 # Groundwork Vault Integration
 
 Groundwork is a personal task and knowledge management system. The vault is plain
-markdown files with YAML frontmatter, organized in a folder structure. You have
-full read/write access to the vault — no VS Code extension needed.
+markdown files with YAML frontmatter, organized in a folder structure.
+
+## Integration path
+
+**Check for the MCP server first.** If `mcp__Groundwork_Vault__list_tasks` is
+available, use MCP tools — they are faster, structured, and always in sync.
+
+Available MCP tools: `list_tasks`, `get_task`, `create_task`, `update_task`,
+`delete_task`, `search_vault`, `get_note`, `create_note`, `update_note`,
+`compile_context`, `get_briefing`.
+
+**Fall back to this skill** when MCP tools are unavailable (VS Code not running).
+The skill bootstraps the SQLite index and provides equivalent read/write access.
 
 ## Vault Locations
 

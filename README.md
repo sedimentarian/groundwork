@@ -108,12 +108,34 @@ The canonical skill lives at `resources/SKILL.md` in this repo. The **Generate**
 
 ### Auto-installation via Generate commands
 
-| Command | Writes to | Skill file |
+| Command | Writes to | Also configures |
 |---|---|---|
-| **Generate CLAUDE.md** | `~/.claude/CLAUDE.md` | `~/.claude/skills/groundwork/SKILL.md` |
-| **Generate Copilot Instructions** | `~/.groundwork/copilot-instructions.md` | `~/.groundwork/copilot-skill.md` |
+| **Generate CLAUDE.md** | `~/.claude/CLAUDE.md` + `~/.claude/skills/groundwork/SKILL.md` | MCP server in `~/.claude/settings.json` |
+| **Generate Copilot Instructions** | `~/.groundwork/copilot-instructions.md` + `~/.groundwork/copilot-skill.md` | Offers to add to VS Code user settings |
+
+**Generate CLAUDE.md** registers the Groundwork MCP server in `~/.claude/settings.json` so Claude Code can call vault tools directly. Re-run it after updating the extension — the server path is installation-specific.
 
 Claude Code auto-discovers skills in `~/.claude/skills/`. For Copilot, the Generate command offers to add the instructions file to your VS Code user settings automatically.
+
+### Manual MCP setup for Claude Code
+
+If you prefer to configure the MCP server manually, add this to `~/.claude/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "groundwork": {
+      "command": "node",
+      "args": [
+        "/path/to/extension/out/mcp/server.js",
+        "--global-path", "/Users/you/.groundwork"
+      ]
+    }
+  }
+}
+```
+
+Find your extension path in VS Code: **Extensions** → Groundwork → **⚙ gear** → **Extension Details** → copy the install path, append `/out/mcp/server.js`.
 
 ### Manual installation
 
