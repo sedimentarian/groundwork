@@ -3,6 +3,11 @@ import * as path from 'path';
 import { VaultFile, ParsedNote, NoteFrontmatter, SessionEntry, VaultScope } from './types';
 
 export class VaultStore {
+  /** Optional callback invoked after every writeNote with the file path, frontmatter, and body */
+  onWrite?: (filePath: string, frontmatter: NoteFrontmatter, body: string) => void;
+  /** Optional callback invoked after every delete with the file path */
+  onDelete?: (filePath: string) => void;
+
   constructor(public rootDir: string, public readonly scope: VaultScope = 'global') {}
 
   /** Ensure vault directory and default structure exist */
@@ -115,6 +120,7 @@ export class VaultStore {
     frontmatter.modified = new Date().toISOString();
     const content = serializeFrontmatter(frontmatter) + body;
     await fs.promises.writeFile(filePath, content, 'utf-8');
+    if (this.onWrite) this.onWrite(filePath, frontmatter, body);
   }
 
   /** Get all notes matching a filter */
@@ -172,6 +178,7 @@ export class VaultStore {
   async delete(filePath: string): Promise<void> {
     this.assertWithinVault(filePath);
     await fs.promises.unlink(filePath);
+    if (this.onDelete) this.onDelete(filePath);
   }
 
   /** Return a path that doesn't exist yet, appending -2, -3 etc. if needed */
@@ -196,6 +203,15 @@ export class VaultStore {
     const dir = path.dirname(newPath);
     await fs.promises.mkdir(dir, { recursive: true });
     await fs.promises.rename(oldPath, newPath);
+    // Write-through: remove old path, index new path
+    if (this.onDelete) this.onDelete(oldPath);
+    if (this.onWrite) {
+      try {
+        const raw = await fs.promises.readFile(newPath, 'utf-8');
+        const { frontmatter, body } = parseFrontmatter(raw);
+        this.onWrite(newPath, frontmatter, body);
+      } catch { /* best-effort — file watcher is the safety net */ }
+    }
   }
 
   private assertWithinVault(filePath: string): void {

@@ -388,6 +388,51 @@ export class EditorPanelManager {
     }
     #editor pre code { background: none; border: none; padding: 0; }
     #editor a { color: var(--accent); }
+    /* ── Link popover ── */
+    #link-popover {
+      display: none;
+      position: fixed;
+      z-index: 100;
+      background: var(--input-bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 6px;
+      gap: 4px;
+      align-items: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    }
+    #link-popover.visible { display: flex; }
+    #link-popover input {
+      background: var(--bg);
+      color: var(--input-fg);
+      border: 1px solid var(--input-border);
+      border-radius: 3px;
+      padding: 3px 6px;
+      font-size: 12px;
+      font-family: inherit;
+      width: 240px;
+      outline: none;
+    }
+    #link-popover input:focus { border-color: var(--accent); }
+    #link-popover button {
+      background: var(--btn-bg);
+      color: var(--btn-fg);
+      border: none;
+      border-radius: 3px;
+      padding: 3px 8px;
+      cursor: pointer;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    #link-popover button:hover { background: var(--btn-hover); }
+    #link-popover .link-remove {
+      background: transparent;
+      color: var(--fg);
+      opacity: 0.7;
+      padding: 3px 4px;
+      font-size: 14px;
+    }
+    #link-popover .link-remove:hover { opacity: 1; }
     #editor hr { border: none; border-top: 1px solid var(--border); margin: 1em 0; }
     #editor table { border-collapse: collapse; margin: .5em 0; width: 100%; }
     #editor th, #editor td { border: 1px solid var(--border); padding: 5px 10px; }
@@ -479,11 +524,17 @@ export class EditorPanelManager {
   <button data-cmd="formatBlock" data-val="blockquote" title="Quote" aria-label="Block quote">❝</button>
   <button data-code title="Inline code" aria-label="Inline code">{ }</button>
   <div class="tb-sep" role="separator"></div>
-  <button data-link title="Insert link" aria-label="Insert link">🔗</button>
+  <button data-link title="Insert link (⌘K)" aria-label="Insert link">🔗</button>
   <button data-hr title="Horizontal rule" aria-label="Horizontal rule">—</button>
 </div>
 
 <div id="editor" contenteditable="true" spellcheck="true" role="textbox" aria-multiline="true" aria-label="Document body"></div>
+
+<div id="link-popover" role="dialog" aria-label="Insert link">
+  <input id="link-url" type="url" placeholder="https://example.com" aria-label="URL" />
+  <button id="link-apply">Apply</button>
+  <button id="link-remove" class="link-remove" title="Remove link" aria-label="Remove link" style="display:none;">\u2715</button>
+</div>
 
 <script nonce="${nonce}" src="${markedUri}"></script>
 <script nonce="${nonce}" src="${turndownUri}"></script>
@@ -493,6 +544,197 @@ export class EditorPanelManager {
   const editorEl = document.getElementById('editor');
   const saveStatus = document.getElementById('save-status');
   let saveTimer;
+
+  // ── Link popover state ──────────────────────────────────────────────────
+  var linkPopover = document.getElementById('link-popover');
+  var linkUrlInput = document.getElementById('link-url');
+  var linkApplyBtn = document.getElementById('link-apply');
+  var linkRemoveBtn = document.getElementById('link-remove');
+  var savedRange = null;
+  var editingAnchor = null;
+
+  function showLinkPopover(anchor) {
+    editingAnchor = anchor || null;
+    var rect;
+    if (anchor) {
+      rect = anchor.getBoundingClientRect();
+      linkUrlInput.value = anchor.href || '';
+      linkRemoveBtn.style.display = '';
+    } else {
+      var sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0) return;
+      savedRange = sel.getRangeAt(0).cloneRange();
+      rect = savedRange.getBoundingClientRect();
+      // If collapsed cursor, use a temporary caret marker to get position
+      if (rect.width === 0 && rect.height === 0) {
+        var temp = document.createElement('span');
+        temp.textContent = '\\u200b';
+        savedRange.insertNode(temp);
+        rect = temp.getBoundingClientRect();
+        temp.parentNode.removeChild(temp);
+        // Re-clone the range after DOM mutation to avoid stale references
+        sel = window.getSelection();
+        if (sel && sel.rangeCount > 0) savedRange = sel.getRangeAt(0).cloneRange();
+      }
+      linkUrlInput.value = '';
+      linkRemoveBtn.style.display = 'none';
+    }
+    // Use getBoundingClientRect directly — popover is position:fixed
+    linkPopover.style.left = rect.left + 'px';
+    linkPopover.style.top = (rect.bottom + 4) + 'px';
+    linkPopover.classList.add('visible');
+    linkUrlInput.focus();
+  }
+
+  function hideLinkPopover() {
+    linkPopover.classList.remove('visible');
+    editingAnchor = null;
+    savedRange = null;
+    editorEl.focus();
+  }
+
+  function applyLink() {
+    var url = linkUrlInput.value.trim();
+    if (!url) { hideLinkPopover(); return; }
+    // Basic protocol normalization
+    if (!/^https?:\\/\\/|^mailto:/i.test(url)) url = 'https://' + url;
+
+    if (editingAnchor) {
+      editingAnchor.href = url;
+    } else if (savedRange) {
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(savedRange);
+      if (savedRange.collapsed) {
+        // No text selected — insert URL as both text and href
+        var a = document.createElement('a');
+        a.href = url;
+        a.textContent = url;
+        savedRange.insertNode(a);
+        // Move caret after the link
+        var r = document.createRange();
+        r.setStartAfter(a);
+        r.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(r);
+      } else {
+        // Wrap selected text
+        var a = document.createElement('a');
+        a.href = url;
+        a.appendChild(savedRange.extractContents());
+        savedRange.insertNode(a);
+      }
+    }
+    hideLinkPopover();
+  }
+
+  linkApplyBtn.addEventListener('click', applyLink);
+  linkUrlInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') { e.preventDefault(); applyLink(); }
+    if (e.key === 'Escape') { e.preventDefault(); hideLinkPopover(); }
+  });
+  linkRemoveBtn.addEventListener('click', function() {
+    if (editingAnchor) {
+      var parent = editingAnchor.parentNode;
+      while (editingAnchor.firstChild) parent.insertBefore(editingAnchor.firstChild, editingAnchor);
+      parent.removeChild(editingAnchor);
+    }
+    hideLinkPopover();
+  });
+
+  // Close popover on outside click
+  document.addEventListener('mousedown', function(e) {
+    if (linkPopover.classList.contains('visible') && !linkPopover.contains(e.target)) {
+      hideLinkPopover();
+    }
+  });
+
+  // Close popover on editor scroll (position:fixed won't follow)
+  editorEl.addEventListener('scroll', hideLinkPopover);
+
+  // ── Click existing link to edit ─────────────────────────────────────────
+  editorEl.addEventListener('click', function(e) {
+    var anchor = e.target.closest('a');
+    if (anchor && editorEl.contains(anchor)) {
+      e.preventDefault();
+      showLinkPopover(anchor);
+    }
+  });
+
+  // ── Auto-link URLs on Space/Enter after typing ──────────────────────────
+  editorEl.addEventListener('keydown', function(e) {
+    if (e.key !== ' ' && e.key !== 'Enter') return;
+    var sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) return;
+    var node = sel.anchorNode;
+    if (!node || node.nodeType !== Node.TEXT_NODE) return;
+    // Don't auto-link inside existing anchors
+    if (node.parentNode && node.parentNode.nodeName === 'A') return;
+
+    var text = node.textContent.substring(0, sel.anchorOffset);
+    var urlRegex = /(https?:\\/\\/[^\\s<>"')\\]]+)$/;
+    var match = text.match(urlRegex);
+    if (!match) return;
+
+    e.preventDefault();
+    var urlStart = match.index;
+    var urlEnd = urlStart + match[0].length;
+    var range = document.createRange();
+    range.setStart(node, urlStart);
+    range.setEnd(node, urlEnd);
+    var a = document.createElement('a');
+    a.href = match[0];
+    a.textContent = match[0];
+    range.deleteContents();
+    range.insertNode(a);
+
+    // Insert the space/newline after the link and place caret there
+    var afterNode = document.createTextNode(e.key === 'Enter' ? '\\n' : ' ');
+    a.parentNode.insertBefore(afterNode, a.nextSibling);
+    var r2 = document.createRange();
+    r2.setStart(afterNode, afterNode.length);
+    r2.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(r2);
+    if (e.key === 'Enter') document.execCommand('insertParagraph');
+  });
+
+  // ── Auto-link pasted plain-text URLs ────────────────────────────────────
+  editorEl.addEventListener('paste', function(e) {
+    var text = (e.clipboardData || window.clipboardData).getData('text/plain');
+    if (!text) return;
+    // Only intercept if the pasted content is a bare URL
+    if (/^https?:\\/\\/[^\\s]+$/.test(text.trim())) {
+      e.preventDefault();
+      var sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0) return;
+      var range = sel.getRangeAt(0);
+
+      if (!range.collapsed) {
+        // Text is selected — wrap it as a link
+        var a = document.createElement('a');
+        a.href = text.trim();
+        a.appendChild(range.extractContents());
+        range.insertNode(a);
+        var r = document.createRange();
+        r.setStartAfter(a);
+        r.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(r);
+      } else {
+        // No selection — insert URL as a clickable link
+        var a = document.createElement('a');
+        a.href = text.trim();
+        a.textContent = text.trim();
+        range.insertNode(a);
+        var r = document.createRange();
+        r.setStartAfter(a);
+        r.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(r);
+      }
+    }
+  });
 
   // ── Type-adaptive fields ─────────────────────────────────────────────────
   var typeSelect = document.getElementById('fm-type');
@@ -616,6 +858,19 @@ export class EditorPanelManager {
       e.preventDefault();
       document.execCommand('italic');
     }
+    if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+      e.preventDefault();
+      var sel = window.getSelection();
+      var anchorEl = sel && sel.anchorNode
+        ? (sel.anchorNode.nodeType === 3 ? sel.anchorNode.parentElement : sel.anchorNode)
+        : null;
+      var anchor = anchorEl ? anchorEl.closest('a') : null;
+      if (anchor && editorEl.contains(anchor)) {
+        showLinkPopover(anchor);
+      } else {
+        showLinkPopover(null);
+      }
+    }
   });
 
   // ── Toolbar ──────────────────────────────────────────────────────────────
@@ -670,8 +925,7 @@ export class EditorPanelManager {
     }
 
     if (btn.hasAttribute('data-link')) {
-      var url = prompt('URL:');
-      if (url) document.execCommand('createLink', false, url);
+      showLinkPopover(null);
       return;
     }
 

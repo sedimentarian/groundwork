@@ -14,8 +14,15 @@ import { EditorPanelManager } from './views/editor-panel';
 import { BriefingPanelManager } from './views/briefing-panel';
 import { pickNoteCreationMethod, pickTaskCreationMethod } from './note-creation';
 import { WeeklyReviewPanelManager } from './weekly-review';
+import { GroundworkDB } from './db/index';
+import { initSchema } from './db/schema';
+import { reindex, VaultSource, frontmatterToRow } from './db/sync';
+import { upsertNote as dbUpsertNote, deleteNote as dbDeleteNote } from './db/queries';
+import { parseFrontmatter } from './vault/store';
+import * as crypto from 'crypto';
 
 let manager: VaultManager;
+let db: GroundworkDB;
 let contextGen: ContextGenerator;
 let sessionTracker: SessionTracker;
 let editorPanels: EditorPanelManager;
@@ -53,6 +60,77 @@ export async function activate(ctx: vscode.ExtensionContext) {
   });
   await manager.init();
 
+  // Initialize SQLite index
+  const dbPath = path.join(globalPath, '.index.db');
+  db = new GroundworkDB(dbPath);
+  await db.open();
+  initSchema(db);
+
+  // Startup reindex — sync vault files into DB
+  const vaultSources: VaultSource[] = [{ rootDir: globalPath, scope: 'global' }];
+  if (manager.workspacePath) {
+    vaultSources.push({ rootDir: manager.workspacePath, scope: 'workspace' });
+  }
+  await reindex(db, vaultSources);
+  db.saveToDisk();
+
+  // Wire write-through: file writes → DB updates
+  const wireWriteThrough = (store: import('./vault/store').VaultStore) => {
+    store.onWrite = (filePath, frontmatter, body) => {
+      const bodyHash = crypto.createHash('sha256').update(body).digest('hex').slice(0, 16);
+      const row = frontmatterToRow(frontmatter, filePath, store.scope, bodyHash);
+      dbUpsertNote(db, row);
+      debouncedSave();
+    };
+    store.onDelete = (filePath) => {
+      dbDeleteNote(db, filePath);
+      debouncedSave();
+    };
+  };
+  wireWriteThrough(manager.globalStore);
+  if (manager.workspaceStore) wireWriteThrough(manager.workspaceStore);
+
+  // Debounced DB save — flush at most every 500ms
+  let saveTimer: NodeJS.Timeout | undefined;
+  const debouncedSave = () => {
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => { try { db.saveToDisk(); } catch { /* shutting down */ } }, 500);
+  };
+
+  // File watcher — sync external edits to DB
+  const watchPatterns = [
+    new vscode.RelativePattern(globalPath, '**/*.md'),
+    ...(manager.workspacePath
+      ? [new vscode.RelativePattern(manager.workspacePath, '**/*.md')]
+      : []),
+  ];
+  for (const pattern of watchPatterns) {
+    const watcher = vscode.workspace.createFileSystemWatcher(pattern);
+
+    const syncFile = async (uri: vscode.Uri) => {
+      const filePath = uri.fsPath;
+      if (filePath.includes('.sessions')) return;
+      const scope = (manager.workspacePath && filePath.startsWith(manager.workspacePath))
+        ? 'workspace' as const : 'global' as const;
+      try {
+        const raw = await fs.promises.readFile(filePath, 'utf-8');
+        const { frontmatter, body } = parseFrontmatter(raw);
+        const bodyHash = crypto.createHash('sha256').update(body).digest('hex').slice(0, 16);
+        const row = frontmatterToRow(frontmatter, filePath, scope, bodyHash);
+        dbUpsertNote(db, row);
+        debouncedSave();
+      } catch { /* file may have been deleted between events */ }
+    };
+
+    watcher.onDidCreate(syncFile);
+    watcher.onDidChange(syncFile);
+    watcher.onDidDelete(uri => {
+      dbDeleteNote(db, uri.fsPath);
+      debouncedSave();
+    });
+    ctx.subscriptions.push(watcher);
+  }
+
   contextGen = new ContextGenerator(manager);
   sessionTracker = new SessionTracker(manager);
   sessionTracker.activate();
@@ -69,7 +147,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
 
   // Tree views
   const vaultTree = new VaultTreeProvider(manager);
-  const taskTree = new TaskTreeProvider(manager);
+  const taskTree = new TaskTreeProvider(manager, db);
   const sessionTree = new SessionTreeProvider(manager);
 
   const refreshAll = () => {
@@ -79,7 +157,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
   };
 
   editorPanels = new EditorPanelManager(manager, ctx.extensionUri, refreshAll, initWorkspaceVault);
-  briefingPanel = new BriefingPanelManager(manager, ctx.extensionUri, refreshAll);
+  briefingPanel = new BriefingPanelManager(manager, ctx.extensionUri, refreshAll, db);
   weeklyReviewPanel = new WeeklyReviewPanelManager(manager, ctx.extensionUri, refreshAll);
 
   // Tasks tree view — createTreeView (not registerTreeDataProvider) for drag-and-drop support
@@ -234,6 +312,12 @@ export async function activate(ctx: vscode.ExtensionContext) {
   // --- Helper: init workspace vault + prompt gitignore ---
   async function initWorkspaceVault(wPath: string) {
     await manager.initWorkspace(wPath);
+    // Reindex new workspace vault into DB and wire write-through
+    if (manager.workspaceStore) {
+      await reindex(db, [{ rootDir: manager.workspacePath!, scope: 'workspace' }]);
+      db.saveToDisk();
+      wireWriteThrough(manager.workspaceStore);
+    }
     if (workspaceFolder) {
       promptGitignore(workspaceFolder.uri.fsPath).catch(() => {}); // fire-and-forget
     }
@@ -1022,6 +1106,38 @@ export async function activate(ctx: vscode.ExtensionContext) {
       }
     }, 3000);
   }
+
+  // --- Register MCP server for AI tool discovery (VS Code 1.99+) ---
+  try {
+    if (typeof vscode.lm?.registerMcpServerDefinitionProvider === 'function') {
+      const mcpEmitter = new vscode.EventEmitter<void>();
+      ctx.subscriptions.push(
+        vscode.lm.registerMcpServerDefinitionProvider('groundwork', {
+          onDidChangeMcpServerDefinitions: mcpEmitter.event,
+          provideMcpServerDefinitions: async () => {
+            const serverScript = path.join(ctx.extensionPath, 'out', 'mcp', 'server.js');
+            const mcpArgs = [serverScript, '--global-path', globalPath];
+            if (manager.workspacePath) {
+              mcpArgs.push('--workspace-path', manager.workspacePath);
+            }
+            return [
+              new vscode.McpStdioServerDefinition(
+                'Groundwork Vault',
+                'node',
+                mcpArgs,
+                undefined,
+                '0.5.0',
+              ),
+            ];
+          },
+          resolveMcpServerDefinition: async (server) => server,
+        })
+      );
+      out.appendLine('[Groundwork] MCP server registered');
+    }
+  } catch {
+    out.appendLine('[Groundwork] MCP server registration not available (VS Code < 1.99)');
+  }
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -1294,4 +1410,11 @@ async function showFilterPicker(taskTree: TaskTreeProvider, tasksView: vscode.Tr
   updateViewMessage(taskTree, tasksView);
 }
 
-export function deactivate() {}
+export function deactivate() {
+  try {
+    if (db?.isOpen) {
+      db.saveToDisk();
+      db.close();
+    }
+  } catch { /* extension shutting down */ }
+}
