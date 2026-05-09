@@ -229,7 +229,7 @@ Exception: if the user said "just capture it", "quick note", or similar, skip th
         await writeAndSync(filePath, fm, params.body ?? '');
         const shorthand = shorthandFor(filePath, fm.status ?? 'inbox');
         const result: Record<string, unknown> = { path: filePath, shorthand };
-        if (!params.body) { result.bodyWasEmpty = true; result.hint = 'Body is empty — call update_note with a body if the user wants to add context.'; }
+        if (!params.body?.trim()) { result.bodyWasEmpty = true; result.hint = 'Body is empty — call update_note with a body if the user wants to add context.'; }
         return ok(result);
       } catch (err) {
         return writeFailed(`Failed to create task: ${err}`);
@@ -281,7 +281,7 @@ Exception: if the user said "just capture it", "quick note", or similar, skip th
       try {
         await writeAndSync(filePath, fm, params.body ?? '');
         const result: Record<string, unknown> = { path: filePath };
-        if (!params.body) { result.bodyWasEmpty = true; result.hint = 'Body is empty — call update_note with a body if the user wants to add context.'; }
+        if (!params.body?.trim()) { result.bodyWasEmpty = true; result.hint = 'Body is empty — call update_note with a body if the user wants to add context.'; }
         return ok(result);
       } catch (err) {
         return writeFailed(`Failed to create note: ${err}`);
