@@ -3,8 +3,7 @@
 src/**
 docs/**
 node_modules/**
-!node_modules/sql.js/dist/sql-wasm.wasm
-!node_modules/sql.js/dist/sql-wasm.js
+!node_modules/sql.js/**
 !node_modules/@modelcontextprotocol/**
 !node_modules/zod/**
 !node_modules/zod-to-json-schema/**
