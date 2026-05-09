@@ -1,14 +1,3 @@
----
-name: groundwork
-description: >
-  Interact with the Groundwork task and knowledge vault — a GTD-style system stored
-  as markdown files with YAML frontmatter. Use this skill whenever the user mentions
-  tasks, todos, backlog, inbox, daily briefing, capturing ideas, triaging work,
-  checking what's next, reviewing progress, or anything related to their Groundwork
-  vault. Also trigger when the user says "groundwork", "/brief", "/tasks", "/capture",
-  or asks about what they're working on, what's overdue, or what to do next.
----
-
 # Groundwork Vault Integration
 
 Groundwork is a personal task and knowledge management system. The vault is plain
@@ -20,11 +9,8 @@ full read/write access to the vault — no VS Code extension needed.
 - **Global vault**: `~/.groundwork/` — available everywhere
 - **Workspace vault**: `.groundwork/` in the current project root — project-specific
 
-**IMPORTANT: Always search BOTH vaults when listing, querying, or counting tasks.**
-Search for files in both `~/.groundwork/` and `.groundwork/` (relative to the
-workspace root). The workspace vault may not exist — that's fine, just skip it if the
-directory isn't there. When presenting results, include tasks from both vaults and
-note which vault each task comes from (global 🌐 or workspace 📂).
+Both vaults are indexed in a single SQLite DB at `~/.groundwork/.index.db`. Queries
+automatically cover both; use the `scope` column (`global` / `workspace`) to label results.
 
 ## Directory Structure
 
@@ -59,8 +45,7 @@ tags:
 created: 2026-03-17T12:00:00.000Z
 ---
 
-The body is free-form markdown. Use headings, lists, code blocks — whatever
-helps describe the task or note.
+The body is free-form markdown.
 ```
 
 ### Frontmatter Fields
@@ -77,8 +62,8 @@ helps describe the task or note.
 | `modified` | no | ISO 8601 timestamp (update on changes) |
 | `due` | no | ISO date |
 | `context` | no | GTD contexts like `@computer`, `@phone` |
-| `recurrence` | no | Recurrence pattern (e.g., `daily`, `every monday`, `every 2 weeks`, `monthly`, `quarterly`) |
-| `recurrence-anchor` | no | ISO date — anchor point for interval calculation |
+| `recurrence` | no | e.g. `daily`, `every monday`, `every 2 weeks`, `monthly` |
+| `recurrence-anchor` | no | ISO date anchor for interval calculation |
 | `sort-order` | no | Numeric sort key for custom ordering within GTD groups |
 
 ### GTD Status Flow
@@ -91,46 +76,156 @@ inbox → someday → next → ...
 any → cancelled
 ```
 
-- **inbox**: Captured but not yet triaged
-- **next**: Triaged and ready to work on
-- **active**: Currently being worked on
-- **waiting**: Blocked on something external
-- **someday**: Interesting but not now
-- **done**: Completed
-- **cancelled**: Won't do
+## SQLite Index
+
+`~/.groundwork/.index.db` is the query layer. Run the **Ensure DB** script before any
+read operation — it initializes the DB if missing and incrementally syncs changed files.
+
+### Ensure DB
+
+```bash
+python3 << 'PYEOF'
+import sqlite3, os, re, json, hashlib
+from pathlib import Path
+from datetime import datetime, timezone
+
+DB_PATH = os.path.expanduser('~/.groundwork/.index.db')
+SCHEMA_VERSION = 1
+
+def parse_frontmatter(text):
+    if not text.startswith('---'):
+        return {}, text
+    end = text.find('\n---', 3)
+    if end == -1:
+        return {}, text
+    fm_text = text[4:end]
+    body = text[end+4:].lstrip('\n')
+    fm = {}
+    current_key = None
+    current_list = None
+    for line in fm_text.split('\n'):
+        if line.startswith('  - ') and current_list is not None:
+            current_list.append(line[4:].strip())
+            continue
+        if current_list is not None:
+            fm[current_key] = current_list
+            current_list = None
+        if ': ' in line:
+            key, _, val = line.partition(': ')
+            key = key.strip(); val = val.strip()
+            if not val:
+                current_key = key; current_list = []
+            else:
+                fm[key] = val
+        elif line.rstrip().endswith(':') and line[:1].isalpha():
+            current_key = line.rstrip().rstrip(':')
+            current_list = []
+    if current_list is not None:
+        fm[current_key] = current_list
+    return fm, body
+
+def init_schema(conn):
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS notes (
+            path TEXT PRIMARY KEY, scope TEXT NOT NULL,
+            title TEXT, type TEXT, status TEXT, priority TEXT,
+            sort_order INTEGER, due TEXT, project TEXT,
+            context TEXT, tags TEXT, recurrence TEXT,
+            created TEXT, modified TEXT, body_hash TEXT,
+            indexed_at TEXT, schema_version INTEGER DEFAULT 1
+        );
+        CREATE INDEX IF NOT EXISTS idx_type_status ON notes(type, status);
+        CREATE INDEX IF NOT EXISTS idx_due ON notes(due);
+        CREATE INDEX IF NOT EXISTS idx_project ON notes(project);
+        CREATE INDEX IF NOT EXISTS idx_scope ON notes(scope);
+        CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts4(path, title, body);
+        CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
+        INSERT OR REPLACE INTO meta VALUES ('schema_version', '1');
+    """)
+    conn.commit()
+
+def schema_ok(conn):
+    try:
+        row = conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
+        return row and int(row[0]) == SCHEMA_VERSION
+    except:
+        return False
+
+def upsert_file(conn, md_file, scope):
+    try:
+        text = Path(md_file).read_text(encoding='utf-8', errors='replace')
+    except:
+        return
+    fm, body = parse_frontmatter(text)
+    body_hash = hashlib.sha256(body.encode()).hexdigest()[:16]
+    existing = conn.execute("SELECT body_hash FROM notes WHERE path=?", (str(md_file),)).fetchone()
+    if existing and existing[0] == body_hash:
+        return
+    tags = fm.get('tags'); context = fm.get('context'); so = fm.get('sort-order')
+    conn.execute("""
+        INSERT OR REPLACE INTO notes
+        (path, scope, title, type, status, priority, sort_order, due, project,
+         context, tags, recurrence, created, modified, body_hash, indexed_at, schema_version)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)
+    """, (
+        str(md_file), scope,
+        fm.get('title'), fm.get('type'), fm.get('status'), fm.get('priority'),
+        int(so) if so and str(so).isdigit() else None,
+        (fm.get('due') or '')[:10] or None,
+        fm.get('project'),
+        json.dumps(context) if isinstance(context, list) else (context or None),
+        json.dumps(tags) if isinstance(tags, list) else (tags or None),
+        fm.get('recurrence'),
+        (fm.get('created') or '')[:10] or None,
+        (fm.get('modified') or '')[:10] or None,
+        body_hash, datetime.now(timezone.utc).isoformat()
+    ))
+    conn.execute("DELETE FROM notes_fts WHERE path=?", (str(md_file),))
+    conn.execute("INSERT INTO notes_fts (path, title, body) VALUES (?,?,?)",
+                 (str(md_file), fm.get('title') or '', body))
+
+def index_vault(conn, vault_dir, scope):
+    vault_path = Path(vault_dir)
+    if not vault_path.exists():
+        return
+    for md_file in vault_path.rglob('*.md'):
+        parts = md_file.relative_to(vault_path).parts
+        if any(p.startswith('.') for p in parts):
+            continue
+        upsert_file(conn, md_file, scope)
+    conn.commit()
+
+os.makedirs(os.path.expanduser('~/.groundwork'), exist_ok=True)
+conn = sqlite3.connect(DB_PATH)
+if not schema_ok(conn):
+    init_schema(conn)
+index_vault(conn, os.path.expanduser('~/.groundwork'), 'global')
+index_vault(conn, os.path.join(os.getcwd(), '.groundwork'), 'workspace')
+conn.close()
+print('DB ready')
+PYEOF
+```
 
 ## Common Operations
 
 ### List tasks
 
-**Use a single grep command** to extract frontmatter from all vault files at once,
-rather than reading each file individually. This reduces vault listing from N file
-reads to 1 terminal command.
+1. Run **Ensure DB**
+2. Query:
 
 ```bash
-# Single-pass extraction of key frontmatter fields from both vaults
-grep -rH "^\(title\|status\|priority\|sort-order\|due\|context\|project\|tags\):" \
-  ~/.groundwork/ .groundwork/ --include="*.md" 2>/dev/null
+sqlite3 -json ~/.groundwork/.index.db \
+  "SELECT path, title, status, priority, sort_order, due, project, tags, scope
+   FROM notes WHERE type='task'
+   ORDER BY
+     CASE WHEN sort_order IS NULL THEN 1 ELSE 0 END, sort_order ASC,
+     CASE priority WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END,
+     title COLLATE NOCASE"
 ```
 
-This returns lines like:
-```
-/Users/you/.groundwork/inbox/fix-login-bug.md:title: Fix login bug
-/Users/you/.groundwork/inbox/fix-login-bug.md:status: inbox
-/Users/you/.groundwork/inbox/fix-login-bug.md:priority: high
-```
-
-**Parse the output** by grouping lines by filename prefix to reconstruct per-file
-frontmatter in memory. Then filter by status, priority, project, or tags as needed.
-Group results by status when presenting to the user.
-
-**Only read individual files** when the body content is actually needed — e.g., to
-show task details, display context, or make edits. For listing and filtering,
-the grep output provides everything required.
+3. Group by `status`, assign shorthand IDs, label 🌐 (global) or 📂 (workspace).
 
 ### Task shorthand references
-
-When listing tasks, **always** assign shorthand IDs using a status prefix + number:
 
 | Prefix | Status |
 |--------|--------|
@@ -142,161 +237,72 @@ When listing tasks, **always** assign shorthand IDs using a status prefix + numb
 | `D` | done |
 | `C` | cancelled |
 
-**Sort order within each group** (must match the sidebar tree view):
-1. `sort-order` frontmatter field (ascending, lowest first; missing = Infinity)
-2. `priority` (high → medium → low)
-3. `title` alphabetically
+Sort order: `sort_order` (NULL last) → priority (high→medium→low) → title alphabetically.
 
-**Output format:**
+Output format:
 ```
 ## Next Actions
-N1. Fix login bug [high, due: 2026-03-20]
-N2. Quick reference shorthand [medium]
-N3. Update API docs [medium]
+N1. Fix login bug [high, due: 2026-03-20] 🌐
+N2. Update API docs [medium] 📂
 ```
 
-**Usage rules:**
-- Always output shorthand numbers when listing tasks
-- Accept user references like "mark N1 done", "what's I3?", "move S2 to next"
-- Numbers are ephemeral — recalculate on each listing, don't persist them
-- When a user references a shorthand, resolve it against the most recent listing in the conversation
-- Include both global and workspace vault tasks in a single numbered sequence per status group
-- **Numbers are always based on the full unfiltered list** — if the user has a filter active, numbers may skip (e.g., N1, N3, N7) but N3 always refers to the same task regardless of filters
+Numbers are ephemeral — recalculate each listing. Accept references like "mark N1 done".
 
 ### Create a task
 
-1. Generate a filename slug from the title: lowercase, replace spaces with hyphens,
-   remove special characters. Example: "Fix login bug" → `fix-login-bug.md`
-2. Write to `~/.groundwork/inbox/` (default) or the appropriate status directory
-3. Use the current ISO timestamp for `created`
-
-**Example — creating a task:**
-```markdown
----
-title: Fix login bug
-type: task
-status: inbox
-priority: high
-project: MyApp
-tags:
-  - bug
-  - auth
-created: 2026-03-17T14:30:00.000Z
----
-
-The login form throws a 500 error when the email contains a plus sign.
-Likely an encoding issue in the auth middleware.
-```
+1. Slug the title: lowercase, hyphens, no special chars → `fix-login-bug.md`
+2. Write to `~/.groundwork/inbox/` (or appropriate directory)
+3. Use current ISO timestamp for `created`
+4. Run **Ensure DB** to sync into the index
 
 ### Update a task
 
-Read the file, modify the frontmatter field(s), write it back. Always update
-the `modified` timestamp. If changing status, consider whether the file should
-move to a different directory (the extension manages this, but for CLI use the
-file can stay in its current directory — status is determined by frontmatter,
-not folder location).
-
-### Rename a task or note
-
-To rename, update both the frontmatter `title` and the filename:
-
-1. Read the file and update `title` in frontmatter
-2. Update `modified` timestamp
-3. Derive the new filename slug: lowercase, replace non-alphanum with hyphens, trim, append `.md`
-4. If the slug changed, write the updated content to the new filename (same directory) and delete the old file
-5. If the slug is the same (e.g., just a casing change), overwrite in place
-
-### Capture a quick idea
-
-When the user says something like "remind me to..." or "I should...", create an
-inbox task immediately. Keep the bar low — capturing fast matters more than
-perfect formatting.
+Read the file, update frontmatter, write back with updated `modified` timestamp.
+Run **Ensure DB** after to sync the change.
 
 ### Daily Briefing
 
-Compile a summary of the user's current state. Read all task files and present:
+1. Run **Ensure DB**
+2. Query:
 
-1. **Overdue** — tasks with `due` date before today
-2. **Active** — tasks with `status: active`
-3. **Next Actions** — tasks with `status: next` (the ready-to-work queue)
-4. **Waiting For** — tasks with `status: waiting` (blocked items)
-5. **Inbox count** — how many untriaged items
-6. **Recently completed** — tasks marked `done` in the last 7 days
+```bash
+sqlite3 -json ~/.groundwork/.index.db \
+  "SELECT title, status, priority, due, project, scope FROM notes
+   WHERE type='task' AND status IN ('active','next','waiting','inbox','done')
+   ORDER BY due ASC NULLS LAST,
+     CASE priority WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END"
+```
 
-Format it as a clean, scannable summary. Keep it brief — this is a dashboard
-glance, not a deep report.
-
-### Weekly Review
-
-Walk the user through a guided GTD weekly review. Go through each phase in order:
-
-1. **Waiting For** — anything unblocked? Move to Next/Active
-2. **Active** — still working on these? Complete or pause?
-3. **Someday / Maybe** — promote, kill, or keep?
-4. **Inbox** — triage each untriaged item
-5. **Recently Completed** — celebrate, identify follow-ups
-6. **Capture** — anything new to add?
-
-For each task in phases 1-4, present the task and ask what to do with it.
-Log a session entry when the review completes.
-
-### Context Compilation
-
-When the user needs to share context with another AI tool or document what
-they're working on, compile relevant vault content:
-
-1. Gather active/next tasks
-2. Include relevant project notes
-3. Include any reference docs the user specifies
-4. Format as a structured block (markdown or XML)
+Present: Overdue → Active → Next Actions → Waiting For → Inbox count → Recently done (7 days).
 
 ### Search and Filter
 
-The vault supports several filtering dimensions when querying tasks:
+```bash
+# By status/project
+sqlite3 -json ~/.groundwork/.index.db "SELECT * FROM notes WHERE type='task' AND status='next'"
 
-- **By tag**: Filter on the `tags` frontmatter array (e.g., `feature`, `bug`, `ux`)
-- **By context**: Filter on the `context` frontmatter array (e.g., `@computer`, `@phone`)
-- **By project**: Filter on the `project` frontmatter field
-- **Full-text search**: Search across title, body, tags, and project fields (case-insensitive substring match)
+# By tag
+sqlite3 -json ~/.groundwork/.index.db "SELECT * FROM notes WHERE tags LIKE '%\"bug\"%'"
 
-Multiple filters can be combined simultaneously.
-
-Search across vault files for keywords, then read matching files to present
-results with context. For structured filtering, parse frontmatter from all
-task files and filter in memory.
-
-## Session Tracking
-
-The `.sessions/` directory contains daily JSONL files (one JSON object per line):
-
-```jsonl
-{"action":"create","file":"inbox/fix-login-bug.md","timestamp":"2026-03-17T14:30:00.000Z"}
-{"action":"status_change","file":"inbox/fix-login-bug.md","detail":"inbox → active","timestamp":"2026-03-17T15:00:00.000Z"}
+# Full-text search
+sqlite3 -json ~/.groundwork/.index.db \
+  "SELECT n.path, n.title, n.status FROM notes n
+   JOIN notes_fts f ON n.path = f.path
+   WHERE notes_fts MATCH 'login error'"
 ```
 
-You don't need to write session entries — the VS Code extension handles that.
-But you can read them to understand recent activity.
+### Delete from DB (after removing a file)
 
-## Archive and Delete
-
-### Vault files (notes, references, projects)
-- **Archive**: Move the file to `archive/` in the same vault. Do not delete vault
-  files directly — archive first.
-- **Unarchive**: Move the file from `archive/` back to `notes/`.
-- **Delete**: Only delete vault files that are already in `archive/`.
-- Archived files are excluded from search, filter, and context compilation.
-
-### Tasks
-- Tasks do not use archive. They follow the GTD status flow.
-- **Delete**: Only delete tasks with status `done` or `cancelled`.
-  To remove an unwanted task, set its status to `cancelled` first, then delete.
+```bash
+sqlite3 ~/.groundwork/.index.db \
+  "DELETE FROM notes WHERE path='/full/path/to/file.md';
+   DELETE FROM notes_fts WHERE path='/full/path/to/file.md';"
+```
 
 ## Tips
 
-- When listing tasks, always group by status and sort by priority within groups
-- Use `high`/`medium`/`low` priority — don't invent new levels
-- Tags are freeform but keep them lowercase and consistent
-- The vault is designed to work with Obsidian too — don't add non-standard syntax
-- If the user asks "what should I work on?", look at `next` and `active` tasks,
-  prioritize by `priority` and `due` date
-- When creating multiple tasks at once, write them all in parallel for speed
+- Run **Ensure DB** before reads — it's fast on a warm DB (skips unchanged files)
+- Status is determined by frontmatter, not folder location
+- Tags are freeform, keep lowercase and consistent
+- The vault is Obsidian-compatible — no non-standard syntax
+- When creating multiple tasks at once, write files in parallel then run Ensure DB once

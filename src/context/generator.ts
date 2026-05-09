@@ -1,5 +1,6 @@
 import { ParsedNote } from '../vault/types';
 import { VaultManager } from '../vault/manager';
+import { GroundworkDB } from '../db/index';
 
 export interface ContextBlock {
   title: string;
@@ -8,7 +9,7 @@ export interface ContextBlock {
 }
 
 export class ContextGenerator {
-  constructor(private manager: VaultManager) {}
+  constructor(private manager: VaultManager, private db?: GroundworkDB) {}
 
   /** Compile selected notes into a single context block for AI tools */
   async compileContext(notePaths: string[], options?: {
@@ -35,14 +36,6 @@ export class ContextGenerator {
 
   /** Generate active project context — all active/next tasks with their project context */
   async compileActiveContext(): Promise<string> {
-    const activeTasks = await this.manager.queryNotes({ type: 'task', status: 'active' });
-    const nextTasks = await this.manager.queryNotes({ type: 'task', status: 'next' });
-    const allTasks = [...activeTasks, ...nextTasks];
-
-    if (allTasks.length === 0) {
-      return '<!-- No active or next tasks found in vault -->';
-    }
-
     const lines: string[] = [
       '# Current Work Context',
       '',
@@ -50,26 +43,58 @@ export class ContextGenerator {
       '',
     ];
 
-    // Group by project
-    const byProject = new Map<string, ParsedNote[]>();
-    for (const task of allTasks) {
-      const project = task.frontmatter.project ?? 'Unassigned';
-      if (!byProject.has(project)) byProject.set(project, []);
-      byProject.get(project)!.push(task);
+    const byProject = new Map<string, { scope: string; status: string; title: string; context: string | null; body: string }[]>();
+
+    if (this.db?.isOpen) {
+      type Row = { path: string; title: string; status: string; project: string; context: string; scope: string; body: string };
+      const rows = this.db.all<Row>(`
+        SELECT n.path, n.title, n.status, n.project, n.context, n.scope, f.body
+        FROM notes n LEFT JOIN notes_fts f ON n.path = f.path
+        WHERE n.type = 'task' AND n.status IN ('active', 'next')
+        ORDER BY CASE n.priority WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END, n.title
+      `);
+
+      if (rows.length === 0) return '<!-- No active or next tasks found in vault -->';
+
+      for (const row of rows) {
+        const project = row.project ?? 'Unassigned';
+        if (!byProject.has(project)) byProject.set(project, []);
+        byProject.get(project)!.push({
+          scope: row.scope,
+          status: row.status,
+          title: row.title ?? row.path,
+          context: row.context,
+          body: row.body ?? '',
+        });
+      }
+    } else {
+      const activeTasks = await this.manager.queryNotes({ type: 'task', status: 'active' });
+      const nextTasks = await this.manager.queryNotes({ type: 'task', status: 'next' });
+      const allTasks = [...activeTasks, ...nextTasks];
+
+      if (allTasks.length === 0) return '<!-- No active or next tasks found in vault -->';
+
+      for (const task of allTasks) {
+        const project = task.frontmatter.project ?? 'Unassigned';
+        if (!byProject.has(project)) byProject.set(project, []);
+        const ctx = task.frontmatter.context;
+        byProject.get(project)!.push({
+          scope: task.source,
+          status: task.frontmatter.status ?? 'unknown',
+          title: task.frontmatter.title ?? task.relativePath,
+          context: Array.isArray(ctx) ? JSON.stringify(ctx) : null,
+          body: task.body,
+        });
+      }
     }
 
     for (const [project, tasks] of byProject) {
       lines.push(`## ${project}`, '');
       for (const task of tasks) {
-        const status = task.frontmatter.status ?? 'unknown';
-        const title = task.frontmatter.title ?? task.relativePath;
-        const scope = task.source === 'workspace' ? '📁' : '🌐';
-        const contexts = task.frontmatter.context
-          ? ` (${(task.frontmatter.context as string[]).join(', ')})`
-          : '';
-        lines.push(`- ${scope} **[${status}]** ${title}${contexts}`);
-
-        // Include first paragraph of body as context
+        const scope = task.scope === 'workspace' ? '📁' : '🌐';
+        const ctxList: string[] = task.context ? JSON.parse(task.context) : [];
+        const ctxSuffix = ctxList.length ? ` (${ctxList.join(', ')})` : '';
+        lines.push(`- ${scope} **[${task.status}]** ${task.title}${ctxSuffix}`);
         const firstPara = task.body.trim().split('\n\n')[0];
         if (firstPara && firstPara.length < 200) {
           lines.push(`  > ${firstPara}`);

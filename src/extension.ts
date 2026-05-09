@@ -131,7 +131,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
     ctx.subscriptions.push(watcher);
   }
 
-  contextGen = new ContextGenerator(manager);
+  contextGen = new ContextGenerator(manager, db);
   sessionTracker = new SessionTracker(manager);
   sessionTracker.activate();
   ctx.subscriptions.push(sessionTracker);
@@ -385,7 +385,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
         workspacePath: manager.workspacePath,
       });
       await manager.init();
-      contextGen = new ContextGenerator(manager);
+      contextGen = new ContextGenerator(manager, db);
 
       refreshAll();
       vscode.window.showInformationMessage(`Global vault set to: ${newPath}`);

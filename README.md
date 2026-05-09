@@ -45,10 +45,12 @@ One click compiles any combination of these layers into context your AI can use.
 | Feature | Description |
 |---|---|
 | **Layered vault** | Reference knowledge, notes, projects, and tasks — all markdown, all portable |
+| **MCP server** | 11 vault tools over stdio — Claude Code and Copilot call directly into your vault without any manual export |
+| **SQLite index** | Fast query layer at `~/.groundwork/.index.db` — synced live by the extension, bootstrapped by the skill when VS Code isn't running |
 | **Daily Briefing** | AI-summarized overview of your day with task counts, overdue alerts, and focus recommendations |
 | **Task management** | GTD-style flow: Inbox → Next → Active → Waiting → Someday → Done |
 | **Recurring tasks** | Daily, weekday, weekly, monthly, quarterly — auto-clones on completion |
-| **WYSIWYG editor** | Rich markdown editing with frontmatter form, toolbar, and type-based file routing |
+| **WYSIWYG editor** | Rich markdown editing with frontmatter form, toolbar, inline link popover, auto-linking, and type-based file routing |
 | **Dual vault** | Global vault (all workspaces) + workspace vault (per project) |
 | **One-click context** | Compile active tasks and notes into clipboard-ready AI context |
 | **AI file generation** | Auto-generate `~/.claude/CLAUDE.md` and `~/.groundwork/copilot-instructions.md` from vault |
@@ -61,7 +63,7 @@ One click compiles any combination of these layers into context your AI can use.
 
 ### Requirements
 
-- VSCode 1.89.0 or later
+- VSCode 1.99.0 or later (required for MCP server support)
 
 ### Installation
 
@@ -88,9 +90,21 @@ npm run compile
 
 ## Skills
 
-Groundwork ships with an **agent skill** that teaches AI tools how to interact with your vault directly — creating tasks, running briefings, triaging inbox, and more — all from the CLI without needing the VS Code extension UI.
+Groundwork integrates with AI tools in two complementary ways:
 
-The canonical skill lives at `.claude/skills/groundwork/SKILL.md` in this repo. The **Generate** commands install it globally for each tool.
+### MCP Server (preferred)
+
+When the extension is running, it registers a **Model Context Protocol server** that exposes 11 vault tools over stdio. Claude Code and GitHub Copilot discover it automatically via VS Code's MCP server contribution — no configuration needed.
+
+Available tools: list tasks, get task, create task, update task, delete task, search vault, get note, create note, update note, compile context, get briefing.
+
+Tasks can be referenced by shorthand (N1, A2, S3) matching the sidebar sort order.
+
+### Agent Skill (fallback / CLI)
+
+When VS Code isn't running, a **skill file** teaches AI tools to interact with the vault directly using the SQLite index. The skill bootstraps the DB if it doesn't exist, then uses SQL queries for fast reads — no file-by-file scanning.
+
+The canonical skill lives at `resources/SKILL.md` in this repo. The **Generate** commands install it globally for each tool.
 
 ### Auto-installation via Generate commands
 
@@ -103,13 +117,11 @@ Claude Code auto-discovers skills in `~/.claude/skills/`. For Copilot, the Gener
 
 ### Manual installation
 
-If you prefer to install the skill manually:
-
 **Claude Code** — install globally (works in every project):
 ```bash
 mkdir -p ~/.claude/skills/groundwork
 curl -o ~/.claude/skills/groundwork/SKILL.md \
-  https://raw.githubusercontent.com/sedimentarian/groundwork/main/.claude/skills/groundwork/SKILL.md
+  https://raw.githubusercontent.com/sedimentarian/groundwork/main/resources/SKILL.md
 ```
 
 **GitHub Copilot** — add to VS Code user settings (`settings.json`):
@@ -165,7 +177,7 @@ The status bar shows a live summary: `2 overdue · 3 active · 1 inbox`. It turn
 
 ## The Vault
 
-All content is markdown files with YAML frontmatter. No database, no lock-in. Edit in any text editor, commit to git, open in Obsidian.
+All content is markdown files with YAML frontmatter. Edit in any text editor, commit to git, open in Obsidian. A SQLite index (`~/.groundwork/.index.db`) mirrors the vault for fast queries — it's a cache, not the source of truth. Delete it and it rebuilds.
 
 ### Structure
 
@@ -287,7 +299,9 @@ Opening any vault file shows a rich editor — not raw markdown.
 
 Bold, Italic, Strikethrough, H1/H2/H3, Bullet list, Numbered list, Task checklist, Blockquote, Inline code, Link, Horizontal rule.
 
-**Shortcuts**: `Cmd+S` save, `Cmd+B` bold, `Cmd+I` italic.
+**Shortcuts**: `Cmd+S` save, `Cmd+B` bold, `Cmd+I` italic, `Cmd+K` insert/edit link.
+
+**Links**: Click the 🔗 toolbar button or press `Cmd+K` to open an inline link popover. Click any existing link to edit or remove it. Typing a URL followed by a space auto-links it; pasting a bare URL does the same.
 
 ---
 
@@ -322,7 +336,7 @@ _Generated 2026-03-15T14:30_
 
 ### Generate Copilot Instructions
 
-`Groundwork: Generate Copilot Instructions` — generates `.github/copilot-instructions.md`. Copilot reads this automatically.
+`Groundwork: Generate Copilot Instructions` — generates `~/.groundwork/copilot-instructions.md` with a snapshot of your active tasks and a pointer to the skill file. The command offers to add this file to your VS Code user settings automatically so Copilot picks it up globally.
 
 ### Staleness Detection
 
