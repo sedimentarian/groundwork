@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.1 — 2026-05-09
+
+### Changed
+- **Context-aware note/task creation** — `create_task` and `create_note` MCP tools now instruct AI agents to ask for additional context before creating a file. If context is provided, the agent generates a structured markdown body from it; if the user declines or presses Enter, the file is created with no body. Quick-capture phrases ("just capture it", "quick note") bypass the prompt. A `bodyWasEmpty` hint in the tool response gives agents a second opportunity to offer expansion after creation.
+- **Skill files updated** — same context-prompting behavior added to `resources/SKILL.md`, `resources/claude-skill.md`, and `.claude/skills/groundwork/SKILL.md` so create behavior is consistent whether using MCP or the fallback skill
+
 ## 0.5.0 — 2026-05-08
 
 ### Added

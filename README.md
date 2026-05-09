@@ -100,6 +100,8 @@ Available tools: list tasks, get task, create task, update task, delete task, se
 
 Tasks can be referenced by shorthand (N1, A2, S3) matching the sidebar sort order.
 
+**Context-aware creation:** When an AI agent calls `create_task` or `create_note`, it first asks you if you'd like to add any details or context. If you do, the agent generates a structured markdown body from your input before writing the file. If you say no or press Enter, the note is created immediately with no body. Quick-capture phrases like "just capture it" skip the prompt entirely.
+
 ### Agent Skill (fallback / CLI)
 
 When VS Code isn't running, a **skill file** teaches AI tools to interact with the vault directly using the SQLite index. The skill bootstraps the DB if it doesn't exist, then uses SQL queries for fast reads — no file-by-file scanning.
