@@ -1,5 +1,6 @@
 import { ParsedNote } from '../vault/types';
 import { VaultManager } from '../vault/manager';
+import { GroundworkDB } from '../db/index';
 
 export interface ContextBlock {
   title: string;
@@ -8,7 +9,7 @@ export interface ContextBlock {
 }
 
 export class ContextGenerator {
-  constructor(private manager: VaultManager) {}
+  constructor(private manager: VaultManager, private db?: GroundworkDB) {}
 
   /** Compile selected notes into a single context block for AI tools */
   async compileContext(notePaths: string[], options?: {
@@ -35,14 +36,6 @@ export class ContextGenerator {
 
   /** Generate active project context — all active/next tasks with their project context */
   async compileActiveContext(): Promise<string> {
-    const activeTasks = await this.manager.queryNotes({ type: 'task', status: 'active' });
-    const nextTasks = await this.manager.queryNotes({ type: 'task', status: 'next' });
-    const allTasks = [...activeTasks, ...nextTasks];
-
-    if (allTasks.length === 0) {
-      return '<!-- No active or next tasks found in vault -->';
-    }
-
     const lines: string[] = [
       '# Current Work Context',
       '',
@@ -50,26 +43,62 @@ export class ContextGenerator {
       '',
     ];
 
-    // Group by project
-    const byProject = new Map<string, ParsedNote[]>();
-    for (const task of allTasks) {
-      const project = task.frontmatter.project ?? 'Unassigned';
-      if (!byProject.has(project)) byProject.set(project, []);
-      byProject.get(project)!.push(task);
+    const byProject = new Map<string, { scope: string; status: string; title: string; context: string | null; body: string }[]>();
+
+    if (this.db?.isOpen) {
+      type Row = { path: string; title: string; status: string; project: string; context: string; scope: string; body: string };
+      const rows = this.db.all<Row>(`
+        SELECT n.path, n.title, n.status, n.project, n.context, n.scope, f.body
+        FROM notes n LEFT JOIN notes_fts f ON n.path = f.path
+        WHERE n.type = 'task' AND n.status IN ('active', 'next')
+        ORDER BY CASE n.priority WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END, n.title
+      `);
+
+      if (rows.length === 0) return '<!-- No active or next tasks found in vault -->';
+
+      for (const row of rows) {
+        const project = row.project ?? 'Unassigned';
+        if (!byProject.has(project)) byProject.set(project, []);
+        let body = row.body ?? '';
+        if (!body && row.path) {
+          try { body = (await this.manager.readNote(row.path)).body; } catch { /* skip */ }
+        }
+        byProject.get(project)!.push({
+          scope: row.scope,
+          status: row.status,
+          title: row.title ?? row.path,
+          context: row.context,
+          body,
+        });
+      }
+    } else {
+      const activeTasks = await this.manager.queryNotes({ type: 'task', status: 'active' });
+      const nextTasks = await this.manager.queryNotes({ type: 'task', status: 'next' });
+      const allTasks = [...activeTasks, ...nextTasks];
+
+      if (allTasks.length === 0) return '<!-- No active or next tasks found in vault -->';
+
+      for (const task of allTasks) {
+        const project = task.frontmatter.project ?? 'Unassigned';
+        if (!byProject.has(project)) byProject.set(project, []);
+        const ctx = task.frontmatter.context;
+        byProject.get(project)!.push({
+          scope: task.source,
+          status: task.frontmatter.status ?? 'unknown',
+          title: task.frontmatter.title ?? task.relativePath,
+          context: Array.isArray(ctx) ? JSON.stringify(ctx) : null,
+          body: task.body,
+        });
+      }
     }
 
     for (const [project, tasks] of byProject) {
       lines.push(`## ${project}`, '');
       for (const task of tasks) {
-        const status = task.frontmatter.status ?? 'unknown';
-        const title = task.frontmatter.title ?? task.relativePath;
-        const scope = task.source === 'workspace' ? '📁' : '🌐';
-        const contexts = task.frontmatter.context
-          ? ` (${(task.frontmatter.context as string[]).join(', ')})`
-          : '';
-        lines.push(`- ${scope} **[${status}]** ${title}${contexts}`);
-
-        // Include first paragraph of body as context
+        const scope = task.scope === 'workspace' ? '📁' : '🌐';
+        const ctxList: string[] = task.context ? JSON.parse(task.context) : [];
+        const ctxSuffix = ctxList.length ? ` (${ctxList.join(', ')})` : '';
+        lines.push(`- ${scope} **[${task.status}]** ${task.title}${ctxSuffix}`);
         const firstPara = task.body.trim().split('\n\n')[0];
         if (firstPara && firstPara.length < 200) {
           lines.push(`  > ${firstPara}`);
@@ -94,11 +123,20 @@ export class ContextGenerator {
       '## Groundwork Vault',
       '',
       'This project uses **Groundwork** for task and knowledge management.',
-      'A skill file is available at `~/.claude/skills/groundwork/SKILL.md` — use it to interact with the vault.',
+      '',
+      'Two integration paths are available:',
+      '',
+      '- **MCP server** (preferred): The Groundwork MCP server is registered in `~/.claude/settings.json`.',
+      '  Use the `mcp__Groundwork_Vault__*` tools directly to read/write vault tasks and notes.',
+      '  Available tools: list_tasks, get_task, create_task, update_task, delete_task,',
+      '  search_vault, get_note, create_note, update_note, compile_context, get_briefing.',
+      '',
+      '- **Skill** (fallback when MCP unavailable): invoke the `groundwork` skill.',
+      '  The skill is at `~/.claude/skills/groundwork/SKILL.md` and bootstraps the SQLite index',
+      '  if VS Code is not running.',
       '',
       'When the user mentions tasks, todos, inbox, briefing, capturing ideas, or asks about what they\'re working on,',
-      'invoke the `groundwork` skill before responding. The skill provides read/write access to the vault:',
-      'creating tasks, triaging inbox, running briefings, searching notes, and compiling context.',
+      'prefer MCP tools if available, otherwise invoke the `groundwork` skill.',
       '',
       'Task shorthand references (N1, I2, S3) follow the convention in the skill file.',
       '',

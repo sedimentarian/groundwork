@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.5.0 — 2026-05-08
+
+### Added
+- **MCP server** — 11 vault tools (list, get, create, update, delete tasks/notes; search; compile context; get briefing) exposed over stdio via `@modelcontextprotocol/sdk`. Registered as a VS Code MCP server — Claude Code and Copilot discover and call it automatically without any manual configuration
+- **Shorthand resolution in MCP** — task references like N1, A2, S3 resolve to vault file paths via the SQLite index, matching the sidebar sort order
+- **SQLite index** — `~/.groundwork/.index.db` mirrors all vault frontmatter and body text. Synced live via write-through hooks and a file watcher; bootstrapped from the skill when VS Code is not running. Enables fast queries, FTS4 full-text search, and stable shorthand numbering
+- **SQLite-backed context generation** — `Generate CLAUDE.md` and `Generate Copilot Instructions` now query the SQLite index via a `notes_fts` JOIN instead of reading every vault file, with fallback to file reads when the DB is unavailable
+- **Updated agent skills** — `resources/SKILL.md` (Copilot) and `.claude/skills/groundwork/SKILL.md` (Claude Code) rewritten to use SQLite-first querying with an inline Python bootstrap script (`Ensure DB`) that initialises and incrementally syncs the DB when VS Code is not running
+
+### Fixed
+- **WYSIWYG hyperlink button** — replaced broken `prompt()` + `document.execCommand('createLink')` (both blocked in VS Code webviews) with an inline link popover using DOM Selection/Range API
+- **Link editing** — click any existing link in the editor to open the popover pre-filled with the current URL; ✕ button unwraps the link
+- **Auto-linking** — URLs typed followed by a space/Enter are automatically wrapped in anchor tags; pasting a bare URL creates a link or wraps selected text
+- **`path` import in shorthand.ts** — moved from inline `require('path')` to a top-level import
+
+### Changed
+- Minimum VS Code version bumped to 1.99.0 (required for `McpStdioServerDefinition` MCP contribution point)
+- `resources/SKILL.md` is now the canonical Copilot skill source; manual install `curl` URL updated accordingly
+- `.vscodeignore` broadened `sql.js` exception from individual files to `!node_modules/sql.js/**`
+- **Cmd+K** shortcut added to WYSIWYG editor for inserting/editing links (context-aware: pre-fills when cursor is inside an existing link)
+
 ## 0.3.0 — 2026-03-21
 
 ### Added

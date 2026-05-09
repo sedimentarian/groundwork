@@ -131,7 +131,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
     ctx.subscriptions.push(watcher);
   }
 
-  contextGen = new ContextGenerator(manager);
+  contextGen = new ContextGenerator(manager, db);
   sessionTracker = new SessionTracker(manager);
   sessionTracker.activate();
   ctx.subscriptions.push(sessionTracker);
@@ -385,7 +385,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
         workspacePath: manager.workspacePath,
       });
       await manager.init();
-      contextGen = new ContextGenerator(manager);
+      contextGen = new ContextGenerator(manager, db);
 
       refreshAll();
       vscode.window.showInformationMessage(`Global vault set to: ${newPath}`);
@@ -841,7 +841,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
       // Write skill file to ~/.claude/skills/groundwork/SKILL.md
       const skillDir = path.join(claudeDir, 'skills', 'groundwork');
       const skillPath = path.join(skillDir, 'SKILL.md');
-      const extSkillPath = path.join(ctx.extensionPath, 'resources', 'SKILL.md');
+      const extSkillPath = path.join(ctx.extensionPath, 'resources', 'claude-skill.md');
       try {
         const skillContent = await vscode.workspace.fs.readFile(vscode.Uri.file(extSkillPath));
         await vscode.workspace.fs.createDirectory(vscode.Uri.file(skillDir));
@@ -850,9 +850,39 @@ export async function activate(ctx: vscode.ExtensionContext) {
         // Skill file not bundled — skip silently
       }
 
+      // Register Groundwork MCP server in ~/.claude/settings.json
+      const claudeSettingsPath = path.join(claudeDir, 'settings.json');
+      const serverScript = path.join(ctx.extensionPath, 'out', 'mcp', 'server.js');
+      try {
+        let settings: Record<string, unknown> = {};
+        try {
+          const raw = await vscode.workspace.fs.readFile(vscode.Uri.file(claudeSettingsPath));
+          const parsed = JSON.parse(Buffer.from(raw).toString('utf-8'));
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            settings = parsed as Record<string, unknown>;
+          }
+        } catch { /* file doesn't exist or isn't valid JSON — start fresh */ }
+
+        const existingMcp = settings.mcpServers;
+        const mcpServers: Record<string, unknown> =
+          existingMcp && typeof existingMcp === 'object' && !Array.isArray(existingMcp)
+            ? { ...(existingMcp as Record<string, unknown>) }
+            : {};
+        const mcpArgs = [serverScript, '--global-path', globalPath];
+        if (manager.workspacePath) { mcpArgs.push('--workspace-path', manager.workspacePath); }
+        mcpServers['groundwork'] = { command: 'node', args: mcpArgs };
+        settings.mcpServers = mcpServers;
+        await vscode.workspace.fs.writeFile(
+          vscode.Uri.file(claudeSettingsPath),
+          Buffer.from(JSON.stringify(settings, null, 2) + '\n', 'utf-8'),
+        );
+      } catch {
+        // Non-fatal — MCP config is optional
+      }
+
       const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(targetPath));
       await vscode.window.showTextDocument(doc);
-      vscode.window.showInformationMessage('~/.claude/CLAUDE.md and skill file written.');
+      vscode.window.showInformationMessage('~/.claude/CLAUDE.md, skill, and MCP server config written.');
     }),
 
     // Generate Copilot Instructions (global)
