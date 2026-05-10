@@ -43,6 +43,9 @@ The editor and briefing views use VS Code webview panels with inline HTML/CSS/JS
 - **Context compilation**: Compiles selected vault content into prompt-ready blocks for AI tools
 - **CLAUDE.md / copilot-instructions generation**: Exports active context as global instruction files (`~/.claude/CLAUDE.md`, `~/.groundwork/copilot-instructions.md`)
 
+### Custom sql.js Build
+The WASM binary is a custom build with FTS5 enabled. See `build/README-custom-sqljs.md` for rebuild instructions. Do not replace with stock sql.js — FTS5 search will break.
+
 ## Development
 
 ```bash
