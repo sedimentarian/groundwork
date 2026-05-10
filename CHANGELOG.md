@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.6.0 — 2026-05-10
+
+### Added
+- **FTS5 full-text search** — upgraded from FTS4 to FTS5 via a custom sql.js WASM build, enabling `bm25()` relevance ranking, prefix queries (`optim*`), exact phrase matching (`"cloud spend"`), and column weighting (title matches ranked 5x above body)
+- **Body content indexing** — the FTS index now includes note body text (previously only indexed titles), so search finds matches across the full content of every note
+- **Tiered search strategy** — multi-word queries try AND first (all words must match); if results are sparse, falls back to OR automatically. AND matches rank above OR matches via bm25
+
+### Changed
+- **Vendored sql.js in `lib/`** — both `sql-wasm.js` and `sql-wasm.wasm` are now committed to `lib/` (matching the existing pattern for `marked.umd.js` and `turndown.umd.js`). The extension loads from `lib/` at runtime instead of `node_modules`, so `npm install` can never silently revert to the stock FTS4-only build
+- **MCP search tool description** — updated to document FTS5 query syntax (prefix matching, exact phrases, OR operator) so AI callers use the search effectively
+- `sql.js` removed from runtime dependencies; `src/db/sql-js.d.ts` removed (types inlined)
+- Schema version bumped from 1 → 2 — existing installations will reindex automatically on first launch
+
 ## 0.5.1 — 2026-05-09
 
 ### Changed

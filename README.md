@@ -46,7 +46,7 @@ One click compiles any combination of these layers into context your AI can use.
 |---|---|
 | **Layered vault** | Reference knowledge, notes, projects, and tasks — all markdown, all portable |
 | **MCP server** | 11 vault tools over stdio — Claude Code and Copilot call directly into your vault without any manual export |
-| **SQLite index** | Fast query layer at `~/.groundwork/.index.db` — synced live by the extension, bootstrapped by the skill when VS Code isn't running |
+| **SQLite index** | Fast query layer at `~/.groundwork/.index.db` — synced live by the extension, bootstrapped by the skill when VS Code isn't running. FTS5 ranked full-text search across titles and body content |
 | **Daily Briefing** | AI-summarized overview of your day with task counts, overdue alerts, and focus recommendations |
 | **Task management** | GTD-style flow: Inbox → Next → Active → Waiting → Someday → Done |
 | **Recurring tasks** | Daily, weekday, weekly, monthly, quarterly — auto-clones on completion |
@@ -408,10 +408,10 @@ All available via Command Palette (`Cmd+Shift+P`) prefixed with `Groundwork:`.
 | Initialize Workspace Vault | Create `.groundwork/` in workspace |
 | Open Vault Folder | Change global vault location |
 | Filter by Tag | Filter tasks by tag |
-| Search Tasks | Full-text search across task titles, bodies, tags, and projects |
+| Search Tasks | Ranked full-text search across task titles, bodies, tags, and projects. Supports prefix matching, exact phrases, and OR queries |
 | Clear Task Filters | Remove active task filters |
 | Filter Vault | Filter vault by type or tag |
-| Search Vault | Full-text search across vault notes |
+| Search Vault | Ranked full-text search across vault note titles and body content |
 | Clear Vault Filter | Remove active vault filters |
 | Collapse All Tasks | Collapse all task groups |
 | Expand All Tasks | Expand all task groups |
