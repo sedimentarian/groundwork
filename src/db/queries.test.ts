@@ -160,6 +160,46 @@ describe('queries', () => {
     });
   });
 
+  describe('tiered search', () => {
+    beforeEach(() => {
+      upsertNote(db, makeRow({ path: '/a.md', title: 'Cost Optimization Strategy' }), 'Reduce cloud infrastructure spend by consolidating services');
+      upsertNote(db, makeRow({ path: '/b.md', title: 'Deploy the API' }), 'Deploy to production cloud environment');
+      upsertNote(db, makeRow({ path: '/c.md', title: 'Weekly Groceries' }), 'Buy milk and bread');
+    });
+
+    it('should find notes by AND match across title and body', () => {
+      const results = searchNotes(db, 'cloud spend');
+      expect(results.length).toBe(1);
+      expect(results[0].path).toBe('/a.md');
+    });
+
+    it('should fall back to OR when AND yields few results', () => {
+      const results = searchNotes(db, 'optimization groceries');
+      expect(results.length).toBe(2);
+      const paths = results.map(r => r.path);
+      expect(paths).toContain('/a.md');
+      expect(paths).toContain('/c.md');
+    });
+
+    it('should rank title matches above body matches', () => {
+      upsertNote(db, makeRow({ path: '/d.md', title: 'Cloud Migration Plan' }), 'Notes about moving to AWS');
+      const results = searchNotes(db, 'cloud');
+      expect(results[0].path).toBe('/d.md');
+    });
+
+    it('should support prefix matching', () => {
+      const results = searchNotes(db, 'optim*');
+      expect(results.length).toBe(1);
+      expect(results[0].path).toBe('/a.md');
+    });
+
+    it('should support quoted exact phrases', () => {
+      const results = searchNotes(db, '"cloud infrastructure"');
+      expect(results.length).toBe(1);
+      expect(results[0].path).toBe('/a.md');
+    });
+  });
+
   describe('getNote', () => {
     it('should return a note by path', () => {
       upsertNote(db, makeRow({ path: '/found.md', title: 'Found' }));
