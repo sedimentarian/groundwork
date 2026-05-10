@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.1 — 2026-05-10
+
+### Fixed
+- Excluded `CLAUDE.md` and `build/` from `.vsix` package
+
 ## 0.6.0 — 2026-05-10
 
 ### Added
