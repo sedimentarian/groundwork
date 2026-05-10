@@ -38,3 +38,5 @@ tsconfig.json
 *.vsix
 CONTRIBUTING.md
 PRIVACY.md
+CLAUDE.md
+build/**
