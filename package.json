@@ -2,7 +2,7 @@
   "name": "groundwork",
   "displayName": "Groundwork",
   "description": "The context layer your AI tools are missing — structured notes, reference knowledge, and task management that feeds directly into Copilot, Claude, and any AI coding assistant",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "publisher": "sedimentarian",
   "license": "GPL-3.0-only",
   "icon": "images/icon.png",
