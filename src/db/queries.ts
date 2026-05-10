@@ -155,7 +155,7 @@ export function searchNotes(db: GroundworkDB, query: string, filter?: { type?: s
 
   // Pass through FTS5 operators (quotes, *, OR) as-is.
   // For plain multi-word queries, try AND first, then OR.
-  const hasOperators = /["\*]|(\bOR\b)/.test(query);
+  const hasOperators = /["\*]|\b(?:OR|AND|NOT|NEAR)\b/i.test(query);
 
   let ftsResults: { path: string }[];
 
@@ -226,7 +226,11 @@ function ftsQuery(db: GroundworkDB, query: string, limit: number): { path: strin
        LIMIT ?`,
       [query, limit]
     );
-  } catch {
-    return [];
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : '';
+    if (msg.includes('fts5') || msg.includes('parse') || msg.includes('syntax')) {
+      return [];
+    }
+    throw err;
   }
 }

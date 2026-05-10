@@ -117,7 +117,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
         const { frontmatter, body } = parseFrontmatter(raw);
         const bodyHash = crypto.createHash('sha256').update(body).digest('hex').slice(0, 16);
         const row = frontmatterToRow(frontmatter, filePath, scope, bodyHash);
-        dbUpsertNote(db, row);
+        dbUpsertNote(db, row, body);
         debouncedSave();
       } catch { /* file may have been deleted between events */ }
     };

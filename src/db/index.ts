@@ -31,7 +31,7 @@ export class GroundworkDB {
         path.join(__dirname, '..', 'lib'),
         path.join(__dirname, '..', '..', 'lib'),
       ];
-      let initSqlJs: (opts?: { wasmBinary?: ArrayLike<number> | Buffer }) => Promise<SqlJsStatic>;
+      let initSqlJs: ((opts?: { wasmBinary?: ArrayLike<number> | Buffer }) => Promise<SqlJsStatic>) | undefined;
       let wasmBinary: Buffer | undefined;
 
       for (const libDir of libPaths) {
@@ -42,7 +42,11 @@ export class GroundworkDB {
         } catch { /* try next */ }
       }
 
-      SQL = await initSqlJs!(wasmBinary ? { wasmBinary } : undefined);
+      if (!initSqlJs || !wasmBinary) {
+        throw new Error(`sql-wasm.js/wasm not found in lib/. Checked: ${libPaths.join(', ')}`);
+      }
+
+      SQL = await initSqlJs({ wasmBinary });
     }
 
     try {
