@@ -45,16 +45,19 @@ describe('schema', () => {
     expect(meta!.value).toBe(String(SCHEMA_VERSION));
   });
 
-  it('should create FTS virtual table', () => {
+  it('should create FTS5 virtual table with bm25 ranking', () => {
     initSchema(db);
 
-    // FTS is standalone — insert directly
     db.run(
       `INSERT INTO notes_fts (path, title, body) VALUES (?, ?, ?)`,
       ['/fts-test.md', 'Search Me', 'Some body content']
     );
 
-    const results = db.all<{ path: string }>('SELECT path FROM notes_fts WHERE notes_fts MATCH ?', ['Search']);
+    // bm25() is FTS5-only — this would throw on FTS4
+    const results = db.all<{ path: string }>(
+      'SELECT path FROM notes_fts WHERE notes_fts MATCH ? ORDER BY bm25(notes_fts)',
+      ['Search']
+    );
     expect(results.length).toBe(1);
     expect(results[0].path).toBe('/fts-test.md');
   });

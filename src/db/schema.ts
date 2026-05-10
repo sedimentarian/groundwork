@@ -1,6 +1,6 @@
 import { GroundworkDB } from './index';
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 const NOTES_TABLE = `
 CREATE TABLE IF NOT EXISTS notes (
@@ -30,9 +30,9 @@ const INDEXES = [
   'CREATE INDEX IF NOT EXISTS idx_scope ON notes(scope)',
 ];
 
-// Standalone FTS4 table (not content-synced) — managed via explicit insert/delete in queries.ts
+// Standalone FTS5 table (not content-synced) — managed via explicit insert/delete in queries.ts
 const FTS_TABLE = `
-CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts4(
+CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
   path,
   title,
   body
