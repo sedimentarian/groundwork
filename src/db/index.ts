@@ -1,11 +1,20 @@
-import initSqlJs, { Database } from 'sql.js';
 import * as fs from 'fs';
 import * as path from 'path';
 
-let SQL: Awaited<ReturnType<typeof initSqlJs>> | null = null;
+// sql.js types — runtime loaded from vendored lib/ build
+interface SqlJsDatabase {
+  run(sql: string, params?: any[]): SqlJsDatabase;
+  exec(sql: string): { columns: string[]; values: any[][] }[];
+  prepare(sql: string): { bind(params?: any[]): boolean; step(): boolean; getAsObject(params?: object): Record<string, unknown>; free(): boolean };
+  export(): Uint8Array;
+  close(): void;
+}
+interface SqlJsStatic { Database: new (data?: ArrayLike<number> | Buffer | null) => SqlJsDatabase; }
+
+let SQL: SqlJsStatic | null = null;
 
 export class GroundworkDB {
-  private db: Database | null = null;
+  private db: SqlJsDatabase | null = null;
 
   constructor(private dbPath: string) {}
 
@@ -16,19 +25,28 @@ export class GroundworkDB {
   /** Open or create the database. Loads WASM on first call. */
   async open(): Promise<void> {
     if (!SQL) {
-      // Locate WASM binary relative to this file (works in both dev and packaged extension)
-      const wasmPaths = [
-        path.join(__dirname, '..', 'node_modules', 'sql.js', 'dist', 'sql-wasm.wasm'),
-        path.join(__dirname, '..', '..', 'node_modules', 'sql.js', 'dist', 'sql-wasm.wasm'),
+      // Load vendored sql.js build from lib/ (custom build with FTS5 enabled).
+      // Both sql-wasm.js and sql-wasm.wasm must come from the same build.
+      const libPaths = [
+        path.join(__dirname, '..', 'lib'),
+        path.join(__dirname, '..', '..', 'lib'),
       ];
+      let initSqlJs: ((opts?: { wasmBinary?: ArrayLike<number> | Buffer }) => Promise<SqlJsStatic>) | undefined;
       let wasmBinary: Buffer | undefined;
-      for (const p of wasmPaths) {
+
+      for (const libDir of libPaths) {
         try {
-          wasmBinary = fs.readFileSync(p);
+          initSqlJs = require(path.join(libDir, 'sql-wasm.js'));
+          wasmBinary = fs.readFileSync(path.join(libDir, 'sql-wasm.wasm'));
           break;
         } catch { /* try next */ }
       }
-      SQL = await initSqlJs(wasmBinary ? { wasmBinary } : undefined);
+
+      if (!initSqlJs || !wasmBinary) {
+        throw new Error(`sql-wasm.js/wasm not found in lib/. Checked: ${libPaths.join(', ')}`);
+      }
+
+      SQL = await initSqlJs({ wasmBinary });
     }
 
     try {

@@ -149,6 +149,57 @@ describe('queries', () => {
       const results = searchNotes(db, 'nonexistent');
       expect(results.length).toBe(0);
     });
+
+    it('should find notes by body content via FTS', () => {
+      upsertNote(db, makeRow({ path: '/a.md', title: 'Meeting Notes' }), 'Discussed cost optimization strategy for cloud infrastructure');
+      upsertNote(db, makeRow({ path: '/b.md', title: 'Grocery List' }), 'Buy milk and eggs');
+
+      const results = searchNotes(db, 'optimization');
+      expect(results.length).toBe(1);
+      expect(results[0].path).toBe('/a.md');
+    });
+  });
+
+  describe('tiered search', () => {
+    beforeEach(() => {
+      upsertNote(db, makeRow({ path: '/a.md', title: 'Cost Optimization Strategy' }), 'Reduce cloud infrastructure spend by consolidating services');
+      upsertNote(db, makeRow({ path: '/b.md', title: 'Deploy the API' }), 'Deploy to production cloud environment');
+      upsertNote(db, makeRow({ path: '/c.md', title: 'Weekly Groceries' }), 'Buy milk and bread');
+    });
+
+    it('should find notes by AND match across title and body', () => {
+      // "cloud spend" AND-matches /a.md only, but since that's < 3 results,
+      // OR fallback also finds /b.md (has "cloud"). AND match ranks first.
+      const results = searchNotes(db, 'cloud spend');
+      expect(results.length).toBe(2);
+      expect(results[0].path).toBe('/a.md');
+    });
+
+    it('should fall back to OR when AND yields few results', () => {
+      const results = searchNotes(db, 'optimization groceries');
+      expect(results.length).toBe(2);
+      const paths = results.map(r => r.path);
+      expect(paths).toContain('/a.md');
+      expect(paths).toContain('/c.md');
+    });
+
+    it('should rank title matches above body matches', () => {
+      upsertNote(db, makeRow({ path: '/d.md', title: 'Cloud Migration Plan' }), 'Notes about moving to AWS');
+      const results = searchNotes(db, 'cloud');
+      expect(results[0].path).toBe('/d.md');
+    });
+
+    it('should support prefix matching', () => {
+      const results = searchNotes(db, 'optim*');
+      expect(results.length).toBe(1);
+      expect(results[0].path).toBe('/a.md');
+    });
+
+    it('should support quoted exact phrases', () => {
+      const results = searchNotes(db, '"cloud infrastructure"');
+      expect(results.length).toBe(1);
+      expect(results[0].path).toBe('/a.md');
+    });
   });
 
   describe('getNote', () => {
@@ -162,6 +213,50 @@ describe('queries', () => {
     it('should return null for missing path', () => {
       const note = getNote(db, '/missing.md');
       expect(note).toBeNull();
+    });
+  });
+
+  describe('end-to-end search pipeline', () => {
+    it('should find a note by body content after upsert and rank title matches higher', () => {
+      upsertNote(
+        db,
+        makeRow({ path: '/cost.md', title: 'Cost Optimization Strategy', type: 'note' }),
+        'Reduce cloud infrastructure spend by consolidating services and renegotiating vendor contracts'
+      );
+      upsertNote(
+        db,
+        makeRow({ path: '/deploy.md', title: 'Cloud Deployment Guide', type: 'note' }),
+        'Step-by-step guide to deploying services on AWS'
+      );
+      upsertNote(
+        db,
+        makeRow({ path: '/meeting.md', title: 'Team Meeting Notes', type: 'note' }),
+        'Discussed reducing cloud spend in Q3 planning session'
+      );
+
+      // Search for "cloud spend" — AND match should find /cost.md and /meeting.md
+      const results = searchNotes(db, 'cloud spend');
+      const paths = results.map(r => r.path);
+      expect(paths).toContain('/cost.md');
+      expect(paths).toContain('/meeting.md');
+    });
+
+    it('should find notes with no keyword overlap via OR fallback', () => {
+      upsertNote(
+        db,
+        makeRow({ path: '/cost.md', title: 'Cost Optimization Strategy', type: 'note' }),
+        'Reduce cloud infrastructure spend'
+      );
+      upsertNote(
+        db,
+        makeRow({ path: '/cicd.md', title: 'CI/CD Pipeline Setup', type: 'note' }),
+        'Configure GitHub Actions for automated deployment'
+      );
+
+      // "optimization pipeline" — no single note has both words
+      // AND yields 0 results, OR fallback finds both
+      const results = searchNotes(db, 'optimization pipeline');
+      expect(results.length).toBe(2);
     });
   });
 });

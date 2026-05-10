@@ -31,7 +31,7 @@ export interface TaskFilter {
 }
 
 /** Insert or update a note row. Also updates the FTS index. */
-export function upsertNote(db: GroundworkDB, row: NoteRow): void {
+export function upsertNote(db: GroundworkDB, row: NoteRow, body = ''): void {
   // Delete existing FTS entry if updating
   db.run('DELETE FROM notes_fts WHERE path = ?', [row.path]);
 
@@ -49,7 +49,7 @@ export function upsertNote(db: GroundworkDB, row: NoteRow): void {
   // Insert FTS entry
   db.run(
     'INSERT INTO notes_fts (path, title, body) VALUES (?, ?, ?)',
-    [row.path, row.title ?? '', '']
+    [row.path, row.title ?? '', body]
   );
 }
 
@@ -148,16 +148,40 @@ export function taskStats(db: GroundworkDB): Record<string, number> {
   return stats;
 }
 
-/** Full-text search across note titles. */
+/** Full-text search with tiered AND→OR strategy and bm25 ranking.
+ *  Title matches weighted 5x over body. Falls back to OR when AND yields < minResults. */
 export function searchNotes(db: GroundworkDB, query: string, filter?: { type?: string; status?: string; scope?: string }, limit = 20): NoteRow[] {
-  // FTS4 query — escape double quotes in user input
-  const ftsQuery = query.replace(/"/g, '""');
+  const minResults = 3;
 
-  // Get matching paths from FTS
-  const ftsResults = db.all<{ path: string }>(
-    'SELECT path FROM notes_fts WHERE notes_fts MATCH ? LIMIT ?',
-    [ftsQuery, limit]
-  );
+  // Pass through FTS5 operators (quotes, *, OR) as-is.
+  // For plain multi-word queries, try AND first, then OR.
+  const hasOperators = /["\*]|\b(?:OR|AND|NOT|NEAR)\b/i.test(query);
+
+  let ftsResults: { path: string }[];
+
+  if (hasOperators) {
+    ftsResults = ftsQuery(db, query, limit);
+  } else {
+    // Tier 1: implicit AND (all words must appear)
+    ftsResults = ftsQuery(db, query, limit);
+
+    // Tier 2: fall back to OR if AND yields too few
+    if (ftsResults.length < minResults) {
+      const words = query.trim().split(/\s+/).filter(Boolean);
+      if (words.length > 1) {
+        const orQuery = words.join(' OR ');
+        const orResults = ftsQuery(db, orQuery, limit);
+        // Merge, preserving AND results first (they're more relevant)
+        const seen = new Set(ftsResults.map(r => r.path));
+        for (const r of orResults) {
+          if (!seen.has(r.path)) {
+            ftsResults.push(r);
+            seen.add(r.path);
+          }
+        }
+      }
+    }
+  }
 
   if (ftsResults.length === 0) return [];
 
@@ -181,8 +205,32 @@ export function searchNotes(db: GroundworkDB, query: string, filter?: { type?: s
     params.push(filter.scope);
   }
 
+  // Preserve FTS ranking order via CASE expression
+  const orderCases = paths.map((_, i) => `WHEN ? THEN ${i}`).join(' ');
+  params.push(...paths);
+
   return db.all<NoteRow>(
-    `SELECT * FROM notes WHERE ${clauses.join(' AND ')} LIMIT ?`,
+    `SELECT * FROM notes WHERE ${clauses.join(' AND ')}
+     ORDER BY CASE path ${orderCases} END
+     LIMIT ?`,
     [...params, limit]
   );
+}
+
+/** Run a single FTS5 query, ranked by bm25 with title weighted 5x over body. */
+function ftsQuery(db: GroundworkDB, query: string, limit: number): { path: string }[] {
+  try {
+    return db.all<{ path: string }>(
+      `SELECT path FROM notes_fts WHERE notes_fts MATCH ?
+       ORDER BY bm25(notes_fts, 0, 5.0, 1.0)
+       LIMIT ?`,
+      [query, limit]
+    );
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : '';
+    if (msg.includes('fts5') || msg.includes('parse') || msg.includes('syntax')) {
+      return [];
+    }
+    throw err;
+  }
 }
