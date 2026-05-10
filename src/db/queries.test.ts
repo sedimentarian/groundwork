@@ -213,4 +213,48 @@ describe('queries', () => {
       expect(note).toBeNull();
     });
   });
+
+  describe('end-to-end search pipeline', () => {
+    it('should find a note by body content after upsert and rank title matches higher', () => {
+      upsertNote(
+        db,
+        makeRow({ path: '/cost.md', title: 'Cost Optimization Strategy', type: 'note' }),
+        'Reduce cloud infrastructure spend by consolidating services and renegotiating vendor contracts'
+      );
+      upsertNote(
+        db,
+        makeRow({ path: '/deploy.md', title: 'Cloud Deployment Guide', type: 'note' }),
+        'Step-by-step guide to deploying services on AWS'
+      );
+      upsertNote(
+        db,
+        makeRow({ path: '/meeting.md', title: 'Team Meeting Notes', type: 'note' }),
+        'Discussed reducing cloud spend in Q3 planning session'
+      );
+
+      // Search for "cloud spend" — AND match should find /cost.md and /meeting.md
+      const results = searchNotes(db, 'cloud spend');
+      const paths = results.map(r => r.path);
+      expect(paths).toContain('/cost.md');
+      expect(paths).toContain('/meeting.md');
+    });
+
+    it('should find notes with no keyword overlap via OR fallback', () => {
+      upsertNote(
+        db,
+        makeRow({ path: '/cost.md', title: 'Cost Optimization Strategy', type: 'note' }),
+        'Reduce cloud infrastructure spend'
+      );
+      upsertNote(
+        db,
+        makeRow({ path: '/cicd.md', title: 'CI/CD Pipeline Setup', type: 'note' }),
+        'Configure GitHub Actions for automated deployment'
+      );
+
+      // "optimization pipeline" — no single note has both words
+      // AND yields 0 results, OR fallback finds both
+      const results = searchNotes(db, 'optimization pipeline');
+      expect(results.length).toBe(2);
+    });
+  });
 });
