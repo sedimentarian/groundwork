@@ -168,8 +168,10 @@ describe('queries', () => {
     });
 
     it('should find notes by AND match across title and body', () => {
+      // "cloud spend" AND-matches /a.md only, but since that's < 3 results,
+      // OR fallback also finds /b.md (has "cloud"). AND match ranks first.
       const results = searchNotes(db, 'cloud spend');
-      expect(results.length).toBe(1);
+      expect(results.length).toBe(2);
       expect(results[0].path).toBe('/a.md');
     });
 
