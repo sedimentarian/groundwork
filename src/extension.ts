@@ -79,7 +79,7 @@ export async function activate(ctx: vscode.ExtensionContext) {
     store.onWrite = (filePath, frontmatter, body) => {
       const bodyHash = crypto.createHash('sha256').update(body).digest('hex').slice(0, 16);
       const row = frontmatterToRow(frontmatter, filePath, store.scope, bodyHash);
-      dbUpsertNote(db, row);
+      dbUpsertNote(db, row, body);
       debouncedSave();
     };
     store.onDelete = (filePath) => {

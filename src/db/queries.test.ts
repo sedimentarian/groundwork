@@ -149,6 +149,15 @@ describe('queries', () => {
       const results = searchNotes(db, 'nonexistent');
       expect(results.length).toBe(0);
     });
+
+    it('should find notes by body content via FTS', () => {
+      upsertNote(db, makeRow({ path: '/a.md', title: 'Meeting Notes' }), 'Discussed cost optimization strategy for cloud infrastructure');
+      upsertNote(db, makeRow({ path: '/b.md', title: 'Grocery List' }), 'Buy milk and eggs');
+
+      const results = searchNotes(db, 'optimization');
+      expect(results.length).toBe(1);
+      expect(results[0].path).toBe('/a.md');
+    });
   });
 
   describe('getNote', () => {

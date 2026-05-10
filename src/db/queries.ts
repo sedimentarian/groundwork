@@ -31,7 +31,7 @@ export interface TaskFilter {
 }
 
 /** Insert or update a note row. Also updates the FTS index. */
-export function upsertNote(db: GroundworkDB, row: NoteRow): void {
+export function upsertNote(db: GroundworkDB, row: NoteRow, body = ''): void {
   // Delete existing FTS entry if updating
   db.run('DELETE FROM notes_fts WHERE path = ?', [row.path]);
 
@@ -49,7 +49,7 @@ export function upsertNote(db: GroundworkDB, row: NoteRow): void {
   // Insert FTS entry
   db.run(
     'INSERT INTO notes_fts (path, title, body) VALUES (?, ?, ?)',
-    [row.path, row.title ?? '', '']
+    [row.path, row.title ?? '', body]
   );
 }
 

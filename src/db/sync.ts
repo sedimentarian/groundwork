@@ -77,7 +77,7 @@ export async function reindex(db: GroundworkDB, vaults: VaultSource[]): Promise<
       const bodyHash = crypto.createHash('sha256').update(body).digest('hex').slice(0, 16);
 
       const row = frontmatterToRow(frontmatter, filePath, vault.scope, bodyHash);
-      upsertNote(db, row);
+      upsertNote(db, row, body);
       stats.inserted++;
     }
   }

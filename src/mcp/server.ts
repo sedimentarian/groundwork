@@ -60,7 +60,7 @@ async function writeAndSync(filePath: string, fm: NoteFrontmatter, body: string)
   await store.writeNote(filePath, fm, body);
   const bodyHash = crypto.createHash('sha256').update(body).digest('hex').slice(0, 16);
   const row = frontmatterToRow(fm, filePath, scopeForPath(filePath), bodyHash);
-  upsertNote(db, row);
+  upsertNote(db, row, body);
   db.saveToDisk();
 }
 
