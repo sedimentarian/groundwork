@@ -24,42 +24,62 @@ function getArg(name: string, fallback: string): string {
 }
 
 const globalPath = getArg('global-path', path.join(os.homedir(), '.groundwork'));
-const workspacePath = getArg('workspace-path', '');
 
 // --- Init DB ---
 const dbPath = path.join(globalPath, '.index.db');
 const db = new GroundworkDB(dbPath);
 
-// --- Init VaultStores ---
+// --- VaultStore management ---
 const globalStore = new VaultStore(globalPath, 'global');
-let workspaceStore: VaultStore | undefined;
-if (workspacePath && fs.existsSync(workspacePath)) {
-  workspaceStore = new VaultStore(workspacePath, 'workspace');
+const workspaceStores = new Map<string, VaultStore>();
+const indexedWorkspacePaths = new Set<string>();
+
+// Pre-warm from --workspace-path CLI arg if provided (backward compat)
+const initialWorkspacePath = getArg('workspace-path', '');
+if (initialWorkspacePath && fs.existsSync(initialWorkspacePath)) {
+  workspaceStores.set(initialWorkspacePath, new VaultStore(initialWorkspacePath, 'workspace'));
+  indexedWorkspacePaths.add(initialWorkspacePath);
 }
 
-function storeForPath(filePath: string): VaultStore {
-  if (workspaceStore && filePath.startsWith(workspacePath)) return workspaceStore;
+function getWorkspaceStore(wsPath?: string): VaultStore | undefined {
+  if (!wsPath) return undefined;
+  if (!workspaceStores.has(wsPath)) {
+    if (!fs.existsSync(wsPath)) return undefined;
+    workspaceStores.set(wsPath, new VaultStore(wsPath, 'workspace'));
+  }
+  return workspaceStores.get(wsPath);
+}
+
+async function ensureWorkspaceIndexed(wsPath: string): Promise<void> {
+  if (indexedWorkspacePaths.has(wsPath)) return;
+  indexedWorkspacePaths.add(wsPath);
+  await reindex(db, [{ rootDir: wsPath, scope: 'workspace' }]);
+  db.saveToDisk();
+}
+
+function storeForPath(filePath: string, wsPath?: string): VaultStore {
+  if (wsPath && filePath.startsWith(wsPath)) return getWorkspaceStore(wsPath) ?? globalStore;
   return globalStore;
 }
 
-function scopeForPath(filePath: string): VaultScope {
-  return (workspaceStore && filePath.startsWith(workspacePath)) ? 'workspace' : 'global';
+function scopeForPath(filePath: string, wsPath?: string): VaultScope {
+  return (wsPath && filePath.startsWith(wsPath)) ? 'workspace' : 'global';
 }
 
-function defaultScope(): VaultScope {
-  return workspaceStore ? 'workspace' : 'global';
+function defaultScope(wsPath?: string): VaultScope {
+  return wsPath ? 'workspace' : 'global';
 }
 
-function rootForScope(scope: VaultScope): string {
-  return scope === 'workspace' && workspacePath ? workspacePath : globalPath;
+function rootForScope(scope: VaultScope, wsPath?: string): string {
+  return scope === 'workspace' && wsPath ? wsPath : globalPath;
 }
 
 /** Write a note file + update DB (write-through). */
-async function writeAndSync(filePath: string, fm: NoteFrontmatter, body: string): Promise<void> {
-  const store = storeForPath(filePath);
+async function writeAndSync(filePath: string, fm: NoteFrontmatter, body: string, wsPath?: string): Promise<void> {
+  const store = storeForPath(filePath, wsPath);
   await store.writeNote(filePath, fm, body);
   const bodyHash = crypto.createHash('sha256').update(body).digest('hex').slice(0, 16);
-  const row = frontmatterToRow(fm, filePath, scopeForPath(filePath), bodyHash);
+  const row = frontmatterToRow(fm, filePath, scopeForPath(filePath, wsPath), bodyHash);
   upsertNote(db, row, body);
   db.saveToDisk();
 }
@@ -99,20 +119,25 @@ function ok(data: unknown) {
   return { content: [{ type: 'text' as const, text: JSON.stringify(data) }] };
 }
 
+const workspacePathSchema = z.string().optional().describe(
+  'Absolute path to the workspace .groundwork directory (e.g. /Users/you/projects/myapp/.groundwork). ' +
+  'Pass this to include workspace-scoped tasks alongside global tasks.'
+);
+
 // --- MCP Server ---
 async function main() {
   await db.open();
   initSchema(db);
 
-  // Reindex on startup
+  // Reindex global vault on startup
   const sources: VaultSource[] = [{ rootDir: globalPath, scope: 'global' }];
-  if (workspaceStore) sources.push({ rootDir: workspacePath, scope: 'workspace' });
+  if (initialWorkspacePath) sources.push({ rootDir: initialWorkspacePath, scope: 'workspace' });
   await reindex(db, sources);
   db.saveToDisk();
 
   const server = new McpServer(
     { name: 'groundwork', version: '0.5.0' },
-    { instructions: 'Groundwork vault management. Use list_tasks to see tasks, get_note to read details, update_note to change fields. Prefer path over shorthand for updates.' }
+    { instructions: 'Groundwork vault management. Pass workspace_path (absolute path to .groundwork dir in the current project) to include workspace tasks. Use list_tasks to see tasks, get_note to read details, update_note to change fields. Prefer path over shorthand for updates.' }
   );
 
   // ── list_tasks ──
@@ -128,9 +153,11 @@ async function main() {
         context: z.string().optional().describe('Filter by @-context'),
         scope: z.enum(['global', 'workspace']).optional().describe('Filter by vault scope'),
         limit: z.number().optional().describe('Max results (default 50)'),
+        workspace_path: workspacePathSchema,
       },
     },
     async (params) => {
+      if (params.workspace_path) await ensureWorkspaceIndexed(params.workspace_path);
       const filter: TaskFilter = {
         status: params.status,
         priority: params.priority,
@@ -164,10 +191,12 @@ async function main() {
       description: 'Get full content of a note or task by path or shorthand (e.g. N1, A2).',
       inputSchema: {
         ref: z.string().describe('Absolute path, relative path, or shorthand (N1, A2, etc.)'),
+        workspace_path: workspacePathSchema,
       },
     },
-    async ({ ref }) => {
-      const filePath = resolveRef(db, ref, globalPath, workspacePath || undefined);
+    async ({ ref, workspace_path }) => {
+      if (workspace_path) await ensureWorkspaceIndexed(workspace_path);
+      const filePath = resolveRef(db, ref, globalPath, workspace_path);
       if (!filePath) return invalidRef(`Cannot resolve ref: ${ref}`);
 
       try {
@@ -201,12 +230,15 @@ Exception: if the user said "just capture it", "quick note", or similar, skip th
         context: z.array(z.string()).optional().describe('GTD contexts (e.g. @computer)'),
         body: z.string().optional().describe('Task body (markdown). Generate from context the user provides. Omit if the user declines to add context.'),
         scope: z.enum(['global', 'workspace']).optional().describe('Vault scope (default: workspace if available)'),
+        workspace_path: workspacePathSchema,
       },
     },
     async (params) => {
-      const scope = params.scope ?? defaultScope();
-      const root = rootForScope(scope);
-      const store = scope === 'workspace' && workspaceStore ? workspaceStore : globalStore;
+      if (params.workspace_path) await ensureWorkspaceIndexed(params.workspace_path);
+      const wsPath = params.workspace_path;
+      const scope = params.scope ?? defaultScope(wsPath);
+      const root = rootForScope(scope, wsPath);
+      const store = scope === 'workspace' && wsPath ? getWorkspaceStore(wsPath) ?? globalStore : globalStore;
 
       const status = (params.status as TaskStatus) ?? 'inbox';
       const slug = params.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -227,7 +259,7 @@ Exception: if the user said "just capture it", "quick note", or similar, skip th
 
       try {
         const body = params.body?.trim() ?? '';
-        await writeAndSync(filePath, fm, body);
+        await writeAndSync(filePath, fm, body, wsPath);
         const shorthand = shorthandFor(filePath, fm.status ?? 'inbox');
         const result: Record<string, unknown> = { path: filePath, shorthand };
         if (!body) { result.bodyWasEmpty = true; result.hint = 'Body is empty — call update_note with a body if the user wants to add context.'; }
@@ -256,12 +288,15 @@ Exception: if the user said "just capture it", "quick note", or similar, skip th
         project: z.string().optional().describe('Project name'),
         tags: z.array(z.string()).optional().describe('Tags'),
         scope: z.enum(['global', 'workspace']).optional().describe('Vault scope'),
+        workspace_path: workspacePathSchema,
       },
     },
     async (params) => {
+      if (params.workspace_path) await ensureWorkspaceIndexed(params.workspace_path);
+      const wsPath = params.workspace_path;
       const scope = params.scope ?? 'global';
-      const root = rootForScope(scope);
-      const store = scope === 'workspace' && workspaceStore ? workspaceStore : globalStore;
+      const root = rootForScope(scope, wsPath);
+      const store = scope === 'workspace' && wsPath ? getWorkspaceStore(wsPath) ?? globalStore : globalStore;
 
       const typeDir: Record<string, string> = {
         note: 'notes', decision: 'decisions', project: 'projects',
@@ -281,7 +316,7 @@ Exception: if the user said "just capture it", "quick note", or similar, skip th
 
       try {
         const body = params.body?.trim() ?? '';
-        await writeAndSync(filePath, fm, body);
+        await writeAndSync(filePath, fm, body, wsPath);
         const result: Record<string, unknown> = { path: filePath };
         if (!body) { result.bodyWasEmpty = true; result.hint = 'Body is empty — call update_note with a body if the user wants to add context.'; }
         return ok(result);
@@ -309,10 +344,12 @@ Exception: if the user said "just capture it", "quick note", or similar, skip th
           body: z.string().optional(),
           sort_order: z.number().optional(),
         }).describe('Fields to update'),
+        workspace_path: workspacePathSchema,
       },
     },
-    async ({ ref, fields }) => {
-      const filePath = resolveRef(db, ref, globalPath, workspacePath || undefined);
+    async ({ ref, fields, workspace_path }) => {
+      if (workspace_path) await ensureWorkspaceIndexed(workspace_path);
+      const filePath = resolveRef(db, ref, globalPath, workspace_path);
       if (!filePath) return invalidRef(`Cannot resolve ref: ${ref}`);
 
       let raw: string;
@@ -336,14 +373,13 @@ Exception: if the user said "just capture it", "quick note", or similar, skip th
       const newBody = fields.body !== undefined ? fields.body : existingBody;
       if (fields.body !== undefined) updatedFields.push('body');
 
-      // Handle status change
       if (fields.status !== undefined && fields.status !== frontmatter.status) {
         frontmatter.status = fields.status as TaskStatus;
         updatedFields.push('status');
       }
 
       try {
-        await writeAndSync(filePath, frontmatter, newBody);
+        await writeAndSync(filePath, frontmatter, newBody, workspace_path);
         return ok({ path: filePath, updated_fields: updatedFields });
       } catch (err) {
         return writeFailed(`Failed to update: ${err}`);
@@ -360,10 +396,12 @@ Exception: if the user said "just capture it", "quick note", or similar, skip th
         ref: z.string().describe('Path or shorthand'),
         target_scope: z.enum(['global', 'workspace']).optional().describe('Target vault scope'),
         target_type: z.enum(['note', 'decision', 'project', 'reference', 'log']).optional().describe('Target type (changes directory)'),
+        workspace_path: workspacePathSchema,
       },
     },
-    async ({ ref, target_scope, target_type }) => {
-      const filePath = resolveRef(db, ref, globalPath, workspacePath || undefined);
+    async ({ ref, target_scope, target_type, workspace_path }) => {
+      if (workspace_path) await ensureWorkspaceIndexed(workspace_path);
+      const filePath = resolveRef(db, ref, globalPath, workspace_path);
       if (!filePath) return invalidRef(`Cannot resolve ref: ${ref}`);
 
       let raw: string;
@@ -374,9 +412,9 @@ Exception: if the user said "just capture it", "quick note", or similar, skip th
       }
 
       const { frontmatter, body } = parseFrontmatter(raw);
-      const scope = target_scope ?? scopeForPath(filePath);
-      const root = rootForScope(scope);
-      const store = scope === 'workspace' && workspaceStore ? workspaceStore : globalStore;
+      const scope = target_scope ?? scopeForPath(filePath, workspace_path);
+      const root = rootForScope(scope, workspace_path);
+      const store = scope === 'workspace' && workspace_path ? getWorkspaceStore(workspace_path) ?? globalStore : globalStore;
 
       if (target_type) frontmatter.type = target_type as NoteFrontmatter['type'];
 
@@ -389,8 +427,7 @@ Exception: if the user said "just capture it", "quick note", or similar, skip th
       const newPath = await store.findAvailablePath(dir, slug);
 
       try {
-        await writeAndSync(newPath, frontmatter, body);
-        // Delete old file and DB entry
+        await writeAndSync(newPath, frontmatter, body, workspace_path);
         await fs.promises.unlink(filePath);
         dbDeleteNote(db, filePath);
         db.saveToDisk();
@@ -416,9 +453,11 @@ Exception: if the user said "just capture it", "quick note", or similar, skip th
         status: z.string().optional().describe('Filter by status'),
         scope: z.enum(['global', 'workspace']).optional().describe('Filter by scope'),
         limit: z.number().optional().describe('Max results (default 20)'),
+        workspace_path: workspacePathSchema,
       },
     },
     async (params) => {
+      if (params.workspace_path) await ensureWorkspaceIndexed(params.workspace_path);
       const results = searchNotes(
         db,
         params.query,
@@ -440,9 +479,12 @@ Exception: if the user said "just capture it", "quick note", or similar, skip th
     'daily_briefing',
     {
       description: 'Get a structured daily briefing of current work.',
-      inputSchema: {},
+      inputSchema: {
+        workspace_path: workspacePathSchema,
+      },
     },
-    async () => {
+    async ({ workspace_path }) => {
+      if (workspace_path) await ensureWorkspaceIndexed(workspace_path);
       const todayStr = new Date().toISOString().slice(0, 10);
       const soonDate = new Date();
       soonDate.setDate(soonDate.getDate() + 3);
@@ -459,7 +501,6 @@ Exception: if the user said "just capture it", "quick note", or similar, skip th
       const waiting = listTasks(db, { status: 'waiting' });
       const stats = taskStats(db);
 
-      // Recently completed — tasks done in last 7 days
       const recentlyCompleted = db.all<NoteRow>(
         "SELECT * FROM notes WHERE type = 'task' AND status = 'done' AND modified >= ? ORDER BY modified DESC LIMIT 20",
         [weekAgoStr]
@@ -495,9 +536,12 @@ Exception: if the user said "just capture it", "quick note", or similar, skip th
     'weekly_review',
     {
       description: 'Get structured data for a GTD weekly review.',
-      inputSchema: {},
+      inputSchema: {
+        workspace_path: workspacePathSchema,
+      },
     },
-    async () => {
+    async ({ workspace_path }) => {
+      if (workspace_path) await ensureWorkspaceIndexed(workspace_path);
       const weekAgoStr = new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10);
       const threeDaysAgoStr = new Date(Date.now() - 3 * 86_400_000).toISOString().slice(0, 10);
 
@@ -515,7 +559,6 @@ Exception: if the user said "just capture it", "quick note", or similar, skip th
         [weekAgoStr]
       );
 
-      // Projects without a next action
       const projectsWithNext = db.all<{ project: string }>(
         "SELECT DISTINCT project FROM notes WHERE type='task' AND status IN ('next','active') AND project IS NOT NULL"
       ).map(r => r.project);
@@ -546,10 +589,12 @@ Exception: if the user said "just capture it", "quick note", or similar, skip th
       description: 'Move a note to the archive directory.',
       inputSchema: {
         ref: z.string().describe('Path or shorthand'),
+        workspace_path: workspacePathSchema,
       },
     },
-    async ({ ref }) => {
-      const filePath = resolveRef(db, ref, globalPath, workspacePath || undefined);
+    async ({ ref, workspace_path }) => {
+      if (workspace_path) await ensureWorkspaceIndexed(workspace_path);
+      const filePath = resolveRef(db, ref, globalPath, workspace_path);
       if (!filePath) return invalidRef(`Cannot resolve ref: ${ref}`);
 
       let raw: string;
@@ -560,9 +605,9 @@ Exception: if the user said "just capture it", "quick note", or similar, skip th
       }
 
       const { frontmatter, body } = parseFrontmatter(raw);
-      const scope = scopeForPath(filePath);
-      const root = rootForScope(scope);
-      const store = scope === 'workspace' && workspaceStore ? workspaceStore : globalStore;
+      const scope = scopeForPath(filePath, workspace_path);
+      const root = rootForScope(scope, workspace_path);
+      const store = scope === 'workspace' && workspace_path ? getWorkspaceStore(workspace_path) ?? globalStore : globalStore;
 
       const archiveDir = path.join(root, 'archive');
       await fs.promises.mkdir(archiveDir, { recursive: true });
@@ -570,7 +615,7 @@ Exception: if the user said "just capture it", "quick note", or similar, skip th
       const archivePath = await store.findAvailablePath(archiveDir, slug);
 
       try {
-        await writeAndSync(archivePath, frontmatter, body);
+        await writeAndSync(archivePath, frontmatter, body, workspace_path);
         await fs.promises.unlink(filePath);
         dbDeleteNote(db, filePath);
         db.saveToDisk();
@@ -588,13 +633,14 @@ Exception: if the user said "just capture it", "quick note", or similar, skip th
       description: 'Permanently delete a note. Only works on archived files or cancelled tasks.',
       inputSchema: {
         ref: z.string().describe('Path or shorthand'),
+        workspace_path: workspacePathSchema,
       },
     },
-    async ({ ref }) => {
-      const filePath = resolveRef(db, ref, globalPath, workspacePath || undefined);
+    async ({ ref, workspace_path }) => {
+      if (workspace_path) await ensureWorkspaceIndexed(workspace_path);
+      const filePath = resolveRef(db, ref, globalPath, workspace_path);
       if (!filePath) return invalidRef(`Cannot resolve ref: ${ref}`);
 
-      // Guard: only archive/ files or cancelled tasks
       const isArchived = filePath.includes('/archive/');
       const row = getNote(db, filePath);
       const isCancelled = row?.status === 'cancelled';
