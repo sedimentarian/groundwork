@@ -405,9 +405,13 @@ Exception: if the user said "just capture it", "quick note", or similar, skip th
   server.registerTool(
     'search',
     {
-      description: 'Full-text search across vault note titles and body content.',
+      description: 'Full-text search across vault note titles and body content. ' +
+        'Supports prefix matching (e.g. "optim*"), exact phrases (e.g. \'"cloud spend"\'), ' +
+        'and OR queries (e.g. "cost OR budget OR spend"). ' +
+        'Multi-word queries require all words to match; falls back to OR automatically if few results found. ' +
+        'For best results, include synonyms and alternate phrasings.',
       inputSchema: {
-        query: z.string().describe('Search query'),
+        query: z.string().describe('Search query — supports FTS5 syntax: prefix* matching, "exact phrases", and OR operator'),
         type: z.string().optional().describe('Filter by note type'),
         status: z.string().optional().describe('Filter by status'),
         scope: z.enum(['global', 'workspace']).optional().describe('Filter by scope'),
