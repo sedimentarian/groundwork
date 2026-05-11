@@ -54,6 +54,18 @@ function rootForScope(scope: VaultScope): string {
   return scope === 'workspace' && workspacePath ? workspacePath : globalPath;
 }
 
+/** Ensure a workspace vault is initialized, optionally from a per-call path override. */
+async function lazyEnsureWorkspace(perCallPath?: string): Promise<void> {
+  const targetPath = perCallPath || workspacePath;
+  if (!targetPath || !fs.existsSync(targetPath)) return;
+  if (workspaceStore && (!perCallPath || perCallPath === workspacePath)) return;
+
+  workspacePath = targetPath;
+  workspaceStore = new VaultStore(targetPath, 'workspace');
+  await reindex(db, [{ rootDir: targetPath, scope: 'workspace' }]);
+  db.saveToDisk();
+}
+
 /** Write a note file + update DB (write-through). */
 async function writeAndSync(filePath: string, fm: NoteFrontmatter, body: string): Promise<void> {
   const store = storeForPath(filePath);
@@ -147,9 +159,11 @@ async function main() {
         context: z.string().optional().describe('Filter by @-context'),
         scope: z.enum(['global', 'workspace']).optional().describe('Filter by vault scope'),
         limit: z.number().optional().describe('Max results (default 50)'),
+        workspace_path: z.string().optional().describe('Absolute path to a workspace .groundwork dir. When passed, includes workspace-scoped results.'),
       },
     },
     async (params) => {
+      await lazyEnsureWorkspace(params.workspace_path);
       const filter: TaskFilter = {
         status: params.status,
         priority: params.priority,
@@ -435,9 +449,11 @@ Exception: if the user said "just capture it", "quick note", or similar, skip th
         status: z.string().optional().describe('Filter by status'),
         scope: z.enum(['global', 'workspace']).optional().describe('Filter by scope'),
         limit: z.number().optional().describe('Max results (default 20)'),
+        workspace_path: z.string().optional().describe('Absolute path to a workspace .groundwork dir. When passed, includes workspace-scoped results.'),
       },
     },
     async (params) => {
+      await lazyEnsureWorkspace(params.workspace_path);
       const results = searchNotes(
         db,
         params.query,
@@ -459,9 +475,12 @@ Exception: if the user said "just capture it", "quick note", or similar, skip th
     'daily_briefing',
     {
       description: 'Get a structured daily briefing of current work.',
-      inputSchema: {},
+      inputSchema: {
+        workspace_path: z.string().optional().describe('Absolute path to a workspace .groundwork dir.'),
+      },
     },
-    async () => {
+    async (params) => {
+      await lazyEnsureWorkspace(params.workspace_path);
       const todayStr = new Date().toISOString().slice(0, 10);
       const soonDate = new Date();
       soonDate.setDate(soonDate.getDate() + 3);
@@ -514,9 +533,12 @@ Exception: if the user said "just capture it", "quick note", or similar, skip th
     'weekly_review',
     {
       description: 'Get structured data for a GTD weekly review.',
-      inputSchema: {},
+      inputSchema: {
+        workspace_path: z.string().optional().describe('Absolute path to a workspace .groundwork dir.'),
+      },
     },
-    async () => {
+    async (params) => {
+      await lazyEnsureWorkspace(params.workspace_path);
       const weekAgoStr = new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10);
       const threeDaysAgoStr = new Date(Date.now() - 3 * 86_400_000).toISOString().slice(0, 10);
 
