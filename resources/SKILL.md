@@ -4,6 +4,23 @@ Groundwork is a personal task and knowledge management system. The vault is plai
 markdown files with YAML frontmatter, organized in a folder structure. You have
 full read/write access to the vault — no VS Code extension needed.
 
+## Integration path
+
+**Check for the MCP server first.** If `mcp__groundwork__list_tasks` is
+available, use MCP tools — they are faster, structured, and always in sync.
+
+Available MCP tools: `list_tasks`, `get_note`, `create_task`, `create_note`,
+`update_note`, `move_note`, `search`, `daily_briefing`, `weekly_review`,
+`archive_note`, `delete_note`.
+
+All MCP tools accept an optional `workspace_path` parameter — pass the absolute
+path to the current project's `.groundwork` directory (e.g.
+`/Users/you/projects/myapp/.groundwork`) to include workspace-scoped tasks
+alongside global ones.
+
+**Fall back to this skill** when MCP tools are unavailable (VS Code not running).
+The skill bootstraps the SQLite index and provides equivalent read/write access.
+
 ## Vault Locations
 
 - **Global vault**: `~/.groundwork/` — available everywhere
@@ -45,7 +62,8 @@ tags:
 created: 2026-03-17T12:00:00.000Z
 ---
 
-The body is free-form markdown.
+The body is free-form markdown. Use headings, lists, code blocks — whatever
+helps describe the task or note.
 ```
 
 ### Frontmatter Fields
@@ -62,8 +80,8 @@ The body is free-form markdown.
 | `modified` | no | ISO 8601 timestamp (update on changes) |
 | `due` | no | ISO date |
 | `context` | no | GTD contexts like `@computer`, `@phone` |
-| `recurrence` | no | e.g. `daily`, `every monday`, `every 2 weeks`, `monthly` |
-| `recurrence-anchor` | no | ISO date anchor for interval calculation |
+| `recurrence` | no | Recurrence pattern (e.g., `daily`, `every monday`, `every 2 weeks`, `monthly`, `quarterly`) |
+| `recurrence-anchor` | no | ISO date — anchor point for interval calculation |
 | `sort-order` | no | Numeric sort key for custom ordering within GTD groups |
 
 ### GTD Status Flow
@@ -76,12 +94,26 @@ inbox → someday → next → ...
 any → cancelled
 ```
 
+- **inbox**: Captured but not yet triaged
+- **next**: Triaged and ready to work on
+- **active**: Currently being worked on
+- **waiting**: Blocked on something external
+- **someday**: Interesting but not now
+- **done**: Completed
+- **cancelled**: Won't do
+
 ## SQLite Index
 
-`~/.groundwork/.index.db` is the query layer. Run the **Ensure DB** script before any
-read operation — it initializes the DB if missing and incrementally syncs changed files.
+`~/.groundwork/.index.db` is the query layer. It mirrors all vault frontmatter and
+supports full-text search via FTS4. The VS Code extension keeps it live (write-through
++ file watcher). When VS Code is not running, use the **Ensure DB** script below to
+initialize or sync it before querying.
 
 ### Ensure DB
+
+Run this **before any read operation**. It creates the DB if missing, applies the
+schema, and incrementally indexes any new or changed vault files (unchanged files are
+skipped via body hash comparison, so this is fast on a warm DB).
 
 ```bash
 python3 << 'PYEOF'
@@ -206,12 +238,17 @@ print('DB ready')
 PYEOF
 ```
 
+### Sync a file to the DB after writing
+
+After creating or updating any vault file, re-run **Ensure DB** — it detects the
+changed body hash and upserts just that file. No separate sync step needed.
+
 ## Common Operations
 
 ### List tasks
 
 1. Run **Ensure DB**
-2. Query:
+2. Query all tasks:
 
 ```bash
 sqlite3 -json ~/.groundwork/.index.db \
@@ -223,9 +260,12 @@ sqlite3 -json ~/.groundwork/.index.db \
      title COLLATE NOCASE"
 ```
 
-3. Group by `status`, assign shorthand IDs, label 🌐 (global) or 📂 (workspace).
+3. Group the JSON results by `status`, assign shorthand IDs, and display.
+   Label each task with 🌐 (scope=global) or 📂 (scope=workspace).
 
 ### Task shorthand references
+
+When listing tasks, **always** assign shorthand IDs using a status prefix + number:
 
 | Prefix | Status |
 |--------|--------|
@@ -237,16 +277,25 @@ sqlite3 -json ~/.groundwork/.index.db \
 | `D` | done |
 | `C` | cancelled |
 
-Sort order: `sort_order` (NULL last) → priority (high→medium→low) → title alphabetically.
+**Sort order within each group** (must match the sidebar tree view):
+1. `sort_order` (ascending; NULL = last)
+2. `priority` (high → medium → low)
+3. `title` alphabetically
 
-Output format:
+**Output format:**
 ```
 ## Next Actions
 N1. Fix login bug [high, due: 2026-03-20] 🌐
-N2. Update API docs [medium] 📂
+N2. Quick reference shorthand [medium] 🌐
+N3. Update API docs [medium] 📂
 ```
 
-Numbers are ephemeral — recalculate each listing. Accept references like "mark N1 done".
+**Usage rules:**
+- Always output shorthand numbers when listing tasks
+- Accept user references like "mark N1 done", "what's I3?", "move S2 to next"
+- Numbers are ephemeral — recalculate on each listing, don't persist them
+- When a user references a shorthand, resolve it against the most recent listing in the conversation
+- **Numbers are always based on the full unfiltered list** — if the user has a filter active, numbers may skip (e.g., N1, N3, N7) but N3 always refers to the same task regardless of filters
 
 ### Create a task
 
@@ -255,10 +304,29 @@ Before creating, ask the user: "Would you like to add any details or context to 
 - If the user says no, none, or just presses Enter, create with an empty body.
 - Exception: if the user said "just capture it", "quick note", or similar, skip the question and create immediately.
 
-1. Slug the title: lowercase, hyphens, no special chars → `fix-login-bug.md`
-2. Write to `~/.groundwork/inbox/` (or appropriate directory)
-3. Use current ISO timestamp for `created`
-4. Run **Ensure DB** to sync into the index
+1. Generate a filename slug from the title: lowercase, replace spaces with hyphens,
+   remove special characters. Example: "Fix login bug" → `fix-login-bug.md`
+2. Write to `~/.groundwork/inbox/` (default) or the appropriate status directory
+3. Use the current ISO timestamp for `created`
+4. Run **Ensure DB** to sync the new file into the index
+
+**Example — creating a task:**
+```markdown
+---
+title: Fix login bug
+type: task
+status: inbox
+priority: high
+project: MyApp
+tags:
+  - bug
+  - auth
+created: 2026-03-17T14:30:00.000Z
+---
+
+The login form throws a 500 error when the email contains a plus sign.
+Likely an encoding issue in the auth middleware.
+```
 
 ### Create a note
 
@@ -267,15 +335,36 @@ Before creating, ask the user: "Would you like to add any details or context to 
 - If the user says no, none, or just presses Enter, create with an empty body.
 - Exception: if the user said "just capture it", "quick note", or similar, skip the question and create immediately.
 
-1. Slug the title: lowercase, hyphens, no special chars → `my-note.md`
+1. Generate a filename slug from the title: lowercase, replace spaces with hyphens, remove special characters
 2. Write to the appropriate directory (`notes/`, `decisions/`, `projects/`, `reference/`, `logs/`)
-3. Use current ISO timestamp for `created`
-4. Run **Ensure DB** to sync into the index
+3. Use the current ISO timestamp for `created`
+4. Run **Ensure DB** to sync the new file into the index
 
 ### Update a task
 
-Read the file, update frontmatter, write back with updated `modified` timestamp.
-Run **Ensure DB** after to sync the change.
+Read the file, modify the frontmatter field(s), write it back. Always update
+the `modified` timestamp. Then run **Ensure DB** to sync the change into the index.
+
+If changing status, consider whether the file should move to a different directory
+(the extension manages this automatically, but for CLI use the file can stay in its
+current directory — status is determined by frontmatter, not folder location).
+
+### Rename a task or note
+
+To rename, update both the frontmatter `title` and the filename:
+
+1. Read the file and update `title` in frontmatter
+2. Update `modified` timestamp
+3. Derive the new filename slug: lowercase, replace non-alphanum with hyphens, trim, append `.md`
+4. If the slug changed, write the updated content to the new filename (same directory) and delete the old file
+5. If the slug is the same (e.g., just a casing change), overwrite in place
+6. Run **Ensure DB** to sync
+
+### Capture a quick idea
+
+When the user says something like "remind me to..." or "I should...", create an
+inbox task immediately. Keep the bar low — capturing fast matters more than
+perfect formatting.
 
 ### Daily Briefing
 
@@ -284,42 +373,235 @@ Run **Ensure DB** after to sync the change.
 
 ```bash
 sqlite3 -json ~/.groundwork/.index.db \
-  "SELECT title, status, priority, due, project, scope FROM notes
+  "SELECT title, status, priority, due, project, scope, path FROM notes
    WHERE type='task' AND status IN ('active','next','waiting','inbox','done')
-   ORDER BY due ASC NULLS LAST,
-     CASE priority WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END"
+   ORDER BY due ASC NULLS LAST, CASE priority WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END"
 ```
 
-Present: Overdue → Active → Next Actions → Waiting For → Inbox count → Recently done (7 days).
+3. Present as a clean, scannable summary:
+   1. **Overdue** — `due < today` and status not done/cancelled
+   2. **Active** — `status = 'active'`
+   3. **Next Actions** — `status = 'next'`
+   4. **Waiting For** — `status = 'waiting'`
+   5. **Inbox count** — count of `status = 'inbox'`
+   6. **Recently completed** — `status = 'done'` and `modified >= today - 7 days`
+
+### Weekly Review
+
+Walk the user through a guided GTD weekly review. Go through each phase in order:
+
+1. **Waiting For** — anything unblocked? Move to Next/Active
+2. **Active** — still working on these? Complete or pause?
+3. **Someday / Maybe** — promote, kill, or keep?
+4. **Inbox** — triage each untriaged item
+5. **Recently Completed** — celebrate, identify follow-ups
+6. **Capture** — anything new to add?
+
+For each task in phases 1-4, present the task and ask what to do with it.
+Log a session entry when the review completes.
+
+### Context Compilation
+
+When the user needs to share context with another AI tool or document what
+they're working on, compile relevant vault content:
+
+1. Query active/next tasks from the DB
+2. Read the body of relevant task and project files
+3. Format as a structured block (markdown or XML)
 
 ### Search and Filter
 
+Use SQL for structured queries, FTS4 for full-text search.
+
 ```bash
-# By status/project
+# By status
 sqlite3 -json ~/.groundwork/.index.db "SELECT * FROM notes WHERE type='task' AND status='next'"
 
-# By tag
+# By project
+sqlite3 -json ~/.groundwork/.index.db "SELECT * FROM notes WHERE project='MyApp'"
+
+# By tag (tags stored as JSON array string)
 sqlite3 -json ~/.groundwork/.index.db "SELECT * FROM notes WHERE tags LIKE '%\"bug\"%'"
 
-# Full-text search
+# Full-text search across title and body
 sqlite3 -json ~/.groundwork/.index.db \
   "SELECT n.path, n.title, n.status FROM notes n
    JOIN notes_fts f ON n.path = f.path
-   WHERE notes_fts MATCH 'login error'"
+   WHERE notes_fts MATCH 'login error'
+   ORDER BY n.status"
 ```
 
-### Delete from DB (after removing a file)
+Multiple filters can be combined with AND/OR in the WHERE clause.
 
-```bash
-sqlite3 ~/.groundwork/.index.db \
-  "DELETE FROM notes WHERE path='/full/path/to/file.md';
-   DELETE FROM notes_fts WHERE path='/full/path/to/file.md';"
+## Session Tracking
+
+The `.sessions/` directory contains daily JSONL files (one JSON object per line):
+
+```jsonl
+{"action":"create","file":"inbox/fix-login-bug.md","timestamp":"2026-03-17T14:30:00.000Z"}
+{"action":"status_change","file":"inbox/fix-login-bug.md","detail":"inbox → active","timestamp":"2026-03-17T15:00:00.000Z"}
 ```
+
+You don't need to write session entries — the VS Code extension handles that.
+But you can read them to understand recent activity.
+
+## Archive and Delete
+
+### Vault files (notes, references, projects)
+- **Archive**: Move the file to `archive/` in the same vault. Do not delete vault
+  files directly — archive first.
+- **Unarchive**: Move the file from `archive/` back to `notes/`.
+- **Delete**: Only delete vault files that are already in `archive/`.
+- Archived files are excluded from search, filter, and context compilation.
+
+### Tasks
+- Tasks do not use archive. They follow the GTD status flow.
+- **Delete**: Only delete tasks with status `done` or `cancelled`.
+  To remove an unwanted task, set its status to `cancelled` first, then delete.
+- After deleting a file, remove it from the DB:
+  ```bash
+  sqlite3 ~/.groundwork/.index.db \
+    "DELETE FROM notes WHERE path='/full/path/to/file.md';
+     DELETE FROM notes_fts WHERE path='/full/path/to/file.md';"
+  ```
 
 ## Tips
 
-- Run **Ensure DB** before reads — it's fast on a warm DB (skips unchanged files)
-- Status is determined by frontmatter, not folder location
-- Tags are freeform, keep lowercase and consistent
-- The vault is Obsidian-compatible — no non-standard syntax
-- When creating multiple tasks at once, write files in parallel then run Ensure DB once
+- Always run **Ensure DB** before read operations — it's idempotent and fast on a warm DB
+- When listing tasks, always group by status and sort by priority within groups
+- Use `high`/`medium`/`low` priority — don't invent new levels
+- Tags are freeform but keep them lowercase and consistent
+- The vault is designed to work with Obsidian too — don't add non-standard syntax
+- If the user asks "what should I work on?", look at `next` and `active` tasks,
+  prioritize by `priority` and `due` date
+- When creating multiple tasks at once, write them all in parallel for speed, then run Ensure DB once
+
+## MCP Setup
+
+Trigger this flow when the user says "groundwork setup", "setup mcp", "configure
+groundwork", or when MCP tools are missing and the user wants to fix it.
+
+### Step 1 — Find the installed extension
+
+```bash
+ls -d ~/.vscode/extensions/sedimentarian.groundwork-* 2>/dev/null | sort -V | tail -1
+```
+
+If nothing is found: tell the user the Groundwork VS Code extension isn't installed
+and stop. They can install it from the marketplace or via `code --install-extension`.
+
+### Step 2 — Create the version-stable wrapper script
+
+Write `~/.groundwork/mcp-server.sh`. This script always resolves the latest
+installed extension at runtime, so config files never need updating after an
+extension upgrade.
+
+```bash
+#!/bin/bash
+# Auto-managed by Groundwork setup. Do not edit manually.
+EXT_DIR=$(ls -d "$HOME/.vscode/extensions/sedimentarian.groundwork-"* 2>/dev/null | sort -V | tail -1)
+if [ -z "$EXT_DIR" ]; then
+  echo "[Groundwork MCP] Extension not found in ~/.vscode/extensions/" >&2
+  exit 1
+fi
+exec node "$EXT_DIR/out/mcp/server.js" "$@"
+```
+
+Make it executable:
+```bash
+chmod +x ~/.groundwork/mcp-server.sh
+```
+
+### Step 3 — Detect which harnesses are present
+
+Check each config file and report what was found:
+
+| Harness | Config file |
+|---------|-------------|
+| Claude Desktop | `~/Library/Application Support/Claude/claude_desktop_config.json` |
+| Claude Code CLI | `~/.claude/settings.json` |
+| Copilot (VS Code) | `~/.vscode/settings.json` |
+
+For each file that exists, read its current `mcpServers` (or `mcp.servers` for
+Copilot) and check whether a `groundwork` entry is already present and correct.
+
+Ask the user: "I found these harnesses: [list]. Which ones should I configure?
+(all / select / skip)"
+
+### Step 4 — Show the proposed config block
+
+The MCP entry is identical for Claude Desktop and Claude Code:
+
+```json
+"groundwork": {
+  "command": "/Users/<you>/.groundwork/mcp-server.sh",
+  "args": ["--global-path", "/Users/<you>/.groundwork"]
+}
+```
+
+Replace `<you>` with the actual home directory (use `os.path.expanduser('~')` or
+`$HOME`).
+
+For **Copilot in VS Code**, the entry goes under `"mcp.servers"` in
+`~/.vscode/settings.json` (VS Code 1.99+):
+
+```json
+"mcp.servers": {
+  "groundwork": {
+    "command": "/Users/<you>/.groundwork/mcp-server.sh",
+    "args": ["--global-path", "/Users/<you>/.groundwork"]
+  }
+}
+```
+
+If unsure about the Copilot config key, show the user the block and ask them to
+confirm the key name before writing.
+
+Show a clear before/after diff for each file that will change. Ask:
+"Apply these changes? (yes / no)"
+
+### Step 5 — Write the configs
+
+For each confirmed file, read the current JSON, merge in the `groundwork` entry
+under the appropriate key, and write it back. Preserve all other keys.
+
+Use Python for safe JSON read/write:
+
+```bash
+python3 << 'PYEOF'
+import json, os
+
+HOME = os.path.expanduser('~')
+WRAPPER = os.path.join(HOME, '.groundwork', 'mcp-server.sh')
+ENTRY = {
+    "command": WRAPPER,
+    "args": ["--global-path", os.path.join(HOME, '.groundwork')]
+}
+
+configs = {
+    "claude_desktop": os.path.join(HOME, 'Library', 'Application Support', 'Claude', 'claude_desktop_config.json'),
+    "claude_code":    os.path.join(HOME, '.claude', 'settings.json'),
+}
+
+for name, path in configs.items():
+    if not os.path.exists(path):
+        continue
+    with open(path) as f:
+        data = json.load(f)
+    data.setdefault('mcpServers', {})['groundwork'] = ENTRY
+    with open(path, 'w') as f:
+        json.dump(data, f, indent=2)
+    print(f'Updated {name}: {path}')
+PYEOF
+```
+
+For Copilot's `~/.vscode/settings.json`, use key `"mcp.servers"` instead of
+`"mcpServers"`.
+
+### Step 6 — Confirm and instruct restart
+
+After writing, tell the user:
+- Which files were updated
+- "Restart Claude (quit and reopen) and reload VS Code for changes to take effect."
+- "After restarting, run `/groundwork` — if MCP tools connect, you'll see tasks
+  without the SQLite fallback being used."
