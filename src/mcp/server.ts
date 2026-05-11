@@ -145,7 +145,7 @@ async function main() {
 
   const server = new McpServer(
     { name: 'groundwork', version: '0.5.0' },
-    { instructions: 'Groundwork vault management. Use list_tasks to see tasks, get_note to read details, update_note to change fields. Prefer path over shorthand for updates.' }
+    { instructions: 'Groundwork vault management. Use list_tasks to see tasks, get_note to read details, update_note to change fields. Prefer path over shorthand for updates. Pass workspace_path to any tool to scope results to a specific project vault.' }
   );
 
   // ── list_tasks ──
@@ -199,9 +199,12 @@ async function main() {
       description: 'Get full content of a note or task by path or shorthand (e.g. N1, A2).',
       inputSchema: {
         ref: z.string().describe('Absolute path, relative path, or shorthand (N1, A2, etc.)'),
+        workspace_path: z.string().optional().describe('Absolute path to a workspace .groundwork dir.'),
       },
     },
-    async ({ ref }) => {
+    async (params) => {
+      await lazyEnsureWorkspace(params.workspace_path);
+      const { ref } = params;
       const filePath = resolveRef(db, ref, globalPath, workspacePath || undefined);
       if (!filePath) return invalidRef(`Cannot resolve ref: ${ref}`);
 
@@ -236,9 +239,11 @@ Exception: if the user said "just capture it", "quick note", or similar, skip th
         context: z.array(z.string()).optional().describe('GTD contexts (e.g. @computer)'),
         body: z.string().optional().describe('Task body (markdown). Generate from context the user provides. Omit if the user declines to add context.'),
         scope: z.enum(['global', 'workspace']).optional().describe('Vault scope (default: workspace if available)'),
+        workspace_path: z.string().optional().describe('Absolute path to a workspace .groundwork dir. Overrides the default scope for this call.'),
       },
     },
     async (params) => {
+      await lazyEnsureWorkspace(params.workspace_path);
       const scope = params.scope ?? defaultScope();
       const root = rootForScope(scope);
       const store = scope === 'workspace' && workspaceStore ? workspaceStore : globalStore;
@@ -291,9 +296,11 @@ Exception: if the user said "just capture it", "quick note", or similar, skip th
         project: z.string().optional().describe('Project name'),
         tags: z.array(z.string()).optional().describe('Tags'),
         scope: z.enum(['global', 'workspace']).optional().describe('Vault scope'),
+        workspace_path: z.string().optional().describe('Absolute path to a workspace .groundwork dir. Overrides the default scope for this call.'),
       },
     },
     async (params) => {
+      await lazyEnsureWorkspace(params.workspace_path);
       const scope = params.scope ?? 'global';
       const root = rootForScope(scope);
       const store = scope === 'workspace' && workspaceStore ? workspaceStore : globalStore;
@@ -333,6 +340,7 @@ Exception: if the user said "just capture it", "quick note", or similar, skip th
       description: 'Update fields on an existing note or task. If status changes on a task, the file is moved to the appropriate directory.',
       inputSchema: {
         ref: z.string().describe('Path or shorthand'),
+        workspace_path: z.string().optional().describe('Absolute path to a workspace .groundwork dir.'),
         fields: z.object({
           title: z.string().optional(),
           status: z.enum(['inbox', 'next', 'active', 'waiting', 'someday', 'done', 'cancelled']).optional(),
@@ -346,7 +354,9 @@ Exception: if the user said "just capture it", "quick note", or similar, skip th
         }).describe('Fields to update'),
       },
     },
-    async ({ ref, fields }) => {
+    async (params) => {
+      await lazyEnsureWorkspace(params.workspace_path);
+      const { ref, fields } = params;
       const filePath = resolveRef(db, ref, globalPath, workspacePath || undefined);
       if (!filePath) return invalidRef(`Cannot resolve ref: ${ref}`);
 
@@ -395,9 +405,12 @@ Exception: if the user said "just capture it", "quick note", or similar, skip th
         ref: z.string().describe('Path or shorthand'),
         target_scope: z.enum(['global', 'workspace']).optional().describe('Target vault scope'),
         target_type: z.enum(['note', 'decision', 'project', 'reference', 'log']).optional().describe('Target type (changes directory)'),
+        workspace_path: z.string().optional().describe('Absolute path to a workspace .groundwork dir.'),
       },
     },
-    async ({ ref, target_scope, target_type }) => {
+    async (params) => {
+      await lazyEnsureWorkspace(params.workspace_path);
+      const { ref, target_scope, target_type } = params;
       const filePath = resolveRef(db, ref, globalPath, workspacePath || undefined);
       if (!filePath) return invalidRef(`Cannot resolve ref: ${ref}`);
 
@@ -589,9 +602,12 @@ Exception: if the user said "just capture it", "quick note", or similar, skip th
       description: 'Move a note to the archive directory.',
       inputSchema: {
         ref: z.string().describe('Path or shorthand'),
+        workspace_path: z.string().optional().describe('Absolute path to a workspace .groundwork dir.'),
       },
     },
-    async ({ ref }) => {
+    async (params) => {
+      await lazyEnsureWorkspace(params.workspace_path);
+      const { ref } = params;
       const filePath = resolveRef(db, ref, globalPath, workspacePath || undefined);
       if (!filePath) return invalidRef(`Cannot resolve ref: ${ref}`);
 
@@ -631,9 +647,12 @@ Exception: if the user said "just capture it", "quick note", or similar, skip th
       description: 'Permanently delete a note. Only works on archived files or cancelled tasks.',
       inputSchema: {
         ref: z.string().describe('Path or shorthand'),
+        workspace_path: z.string().optional().describe('Absolute path to a workspace .groundwork dir.'),
       },
     },
-    async ({ ref }) => {
+    async (params) => {
+      await lazyEnsureWorkspace(params.workspace_path);
+      const { ref } = params;
       const filePath = resolveRef(db, ref, globalPath, workspacePath || undefined);
       if (!filePath) return invalidRef(`Cannot resolve ref: ${ref}`);
 
