@@ -84,7 +84,7 @@ export async function reindex(db: GroundworkDB, vaults: VaultSource[]): Promise<
 
   // Delete DB rows for files that no longer exist, but only under the vault
   // roots that were actually scanned. Rows from unscanned vaults must stay.
-  const scannedRoots = vaults.map(v => v.rootDir);
+  const scannedRoots = vaults.map(v => path.resolve(v.rootDir));
   const allDbPaths = db.all<{ path: string }>('SELECT path FROM notes');
   for (const { path: dbPath } of allDbPaths) {
     if (seenPaths.has(dbPath)) continue;

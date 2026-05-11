@@ -38,12 +38,12 @@ if (workspacePath && fs.existsSync(workspacePath)) {
 }
 
 function storeForPath(filePath: string): VaultStore {
-  if (workspaceStore && filePath.startsWith(workspacePath)) return workspaceStore;
+  if (workspaceStore && filePath.startsWith(workspacePath + path.sep)) return workspaceStore;
   return globalStore;
 }
 
 function scopeForPath(filePath: string): VaultScope {
-  return (workspaceStore && filePath.startsWith(workspacePath)) ? 'workspace' : 'global';
+  return (workspaceStore && filePath.startsWith(workspacePath + path.sep)) ? 'workspace' : 'global';
 }
 
 function defaultScope(): VaultScope {
@@ -58,6 +58,8 @@ function rootForScope(scope: VaultScope): string {
 async function lazyEnsureWorkspace(perCallPath?: string): Promise<void> {
   const targetPath = perCallPath || workspacePath;
   if (!targetPath || !fs.existsSync(targetPath)) return;
+  // Reject paths that aren't absolute or don't point to a .groundwork directory.
+  if (!path.isAbsolute(targetPath) || path.basename(targetPath) !== '.groundwork') return;
   if (workspaceStore && (!perCallPath || perCallPath === workspacePath)) return;
 
   workspacePath = targetPath;
