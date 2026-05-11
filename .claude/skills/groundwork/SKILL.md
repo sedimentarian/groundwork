@@ -16,12 +16,17 @@ markdown files with YAML frontmatter, organized in a folder structure.
 
 ## Integration path
 
-**Check for the MCP server first.** If `mcp__Groundwork_Vault__list_tasks` is
+**Check for the MCP server first.** If `mcp__groundwork__list_tasks` is
 available, use MCP tools — they are faster, structured, and always in sync.
 
-Available MCP tools: `list_tasks`, `get_task`, `create_task`, `update_task`,
-`delete_task`, `search_vault`, `get_note`, `create_note`, `update_note`,
-`compile_context`, `get_briefing`.
+Available MCP tools: `list_tasks`, `get_note`, `create_task`, `create_note`,
+`update_note`, `move_note`, `search`, `daily_briefing`, `weekly_review`,
+`archive_note`, `delete_note`.
+
+All MCP tools accept an optional `workspace_path` parameter — pass the absolute
+path to the current project's `.groundwork` directory (e.g.
+`/Users/you/projects/myapp/.groundwork`) to include workspace-scoped tasks
+alongside global ones.
 
 **Fall back to this skill** when MCP tools are unavailable (VS Code not running).
 The skill bootstraps the SQLite index and provides equivalent read/write access.
@@ -480,3 +485,133 @@ But you can read them to understand recent activity.
 - If the user asks "what should I work on?", look at `next` and `active` tasks,
   prioritize by `priority` and `due` date
 - When creating multiple tasks at once, write them all in parallel for speed, then run Ensure DB once
+
+## MCP Setup
+
+Trigger this flow when the user says "groundwork setup", "setup mcp", "configure
+groundwork", or when MCP tools are missing and the user wants to fix it.
+
+### Step 1 — Find the installed extension
+
+```bash
+ls -d ~/.vscode/extensions/sedimentarian.groundwork-* 2>/dev/null | sort -V | tail -1
+```
+
+If nothing is found: tell the user the Groundwork VS Code extension isn't installed
+and stop. They can install it from the marketplace or via `code --install-extension`.
+
+### Step 2 — Create the version-stable wrapper script
+
+Write `~/.groundwork/mcp-server.sh`. This script always resolves the latest
+installed extension at runtime, so config files never need updating after an
+extension upgrade.
+
+```bash
+#!/bin/bash
+# Auto-managed by Groundwork setup. Do not edit manually.
+EXT_DIR=$(ls -d "$HOME/.vscode/extensions/sedimentarian.groundwork-"* 2>/dev/null | sort -V | tail -1)
+if [ -z "$EXT_DIR" ]; then
+  echo "[Groundwork MCP] Extension not found in ~/.vscode/extensions/" >&2
+  exit 1
+fi
+exec node "$EXT_DIR/out/mcp/server.js" "$@"
+```
+
+Make it executable:
+```bash
+chmod +x ~/.groundwork/mcp-server.sh
+```
+
+### Step 3 — Detect which harnesses are present
+
+Check each config file and report what was found:
+
+| Harness | Config file |
+|---------|-------------|
+| Claude Desktop | `~/Library/Application Support/Claude/claude_desktop_config.json` |
+| Claude Code CLI | `~/.claude/settings.json` |
+| Copilot (VS Code) | `~/.vscode/settings.json` |
+
+For each file that exists, read its current `mcpServers` (or `mcp.servers` for
+Copilot) and check whether a `groundwork` entry is already present and correct.
+
+Ask the user: "I found these harnesses: [list]. Which ones should I configure?
+(all / select / skip)"
+
+### Step 4 — Show the proposed config block
+
+The MCP entry is identical for Claude Desktop and Claude Code:
+
+```json
+"groundwork": {
+  "command": "/Users/<you>/.groundwork/mcp-server.sh",
+  "args": ["--global-path", "/Users/<you>/.groundwork"]
+}
+```
+
+Replace `<you>` with the actual home directory (use `os.path.expanduser('~')` or
+`$HOME`).
+
+For **Copilot in VS Code**, the entry goes under `"mcp.servers"` in
+`~/.vscode/settings.json` (VS Code 1.99+):
+
+```json
+"mcp.servers": {
+  "groundwork": {
+    "command": "/Users/<you>/.groundwork/mcp-server.sh",
+    "args": ["--global-path", "/Users/<you>/.groundwork"]
+  }
+}
+```
+
+If unsure about the Copilot config key, show the user the block and ask them to
+confirm the key name before writing.
+
+Show a clear before/after diff for each file that will change. Ask:
+"Apply these changes? (yes / no)"
+
+### Step 5 — Write the configs
+
+For each confirmed file, read the current JSON, merge in the `groundwork` entry
+under the appropriate key, and write it back. Preserve all other keys.
+
+Use Python for safe JSON read/write:
+
+```bash
+python3 << 'PYEOF'
+import json, os
+
+HOME = os.path.expanduser('~')
+WRAPPER = os.path.join(HOME, '.groundwork', 'mcp-server.sh')
+ENTRY = {
+    "command": WRAPPER,
+    "args": ["--global-path", os.path.join(HOME, '.groundwork')]
+}
+
+configs = {
+    "claude_desktop": os.path.join(HOME, 'Library', 'Application Support', 'Claude', 'claude_desktop_config.json'),
+    "claude_code":    os.path.join(HOME, '.claude', 'settings.json'),
+}
+
+for name, path in configs.items():
+    if not os.path.exists(path):
+        continue
+    with open(path) as f:
+        data = json.load(f)
+    data.setdefault('mcpServers', {})['groundwork'] = ENTRY
+    with open(path, 'w') as f:
+        json.dump(data, f, indent=2)
+    print(f'Updated {name}: {path}')
+PYEOF
+```
+
+For Copilot's `~/.vscode/settings.json`, use key `"mcp.servers"` instead of
+`"mcpServers"`.
+
+### Step 6 — Confirm and instruct restart
+
+After writing, tell the user:
+- Which files were updated
+- "Restart Claude (quit and reopen) and reload VS Code for changes to take effect."
+- "After restarting, run `/groundwork` — if MCP tools connect, you'll see tasks
+  without the SQLite fallback being used."

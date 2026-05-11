@@ -29,6 +29,43 @@ let editorPanels: EditorPanelManager;
 let briefingPanel: BriefingPanelManager;
 let weeklyReviewPanel: WeeklyReviewPanelManager;
 
+/** Write the Groundwork MCP server entry into ~/.claude/settings.json. */
+async function updateClaudeMcpConfig(
+  extensionPath: string,
+  globalPath: string,
+  workspacePath: string | undefined,
+): Promise<void> {
+  const home = process.env.HOME ?? process.env.USERPROFILE ?? '';
+  const claudeDir = path.join(home, '.claude');
+  const claudeSettingsPath = path.join(claudeDir, 'settings.json');
+  const serverScript = path.join(extensionPath, 'out', 'mcp', 'server.js');
+
+  let settings: Record<string, unknown> = {};
+  try {
+    const raw = await vscode.workspace.fs.readFile(vscode.Uri.file(claudeSettingsPath));
+    const parsed = JSON.parse(Buffer.from(raw).toString('utf-8'));
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      settings = parsed as Record<string, unknown>;
+    }
+  } catch { /* file doesn't exist or isn't valid JSON — start fresh */ }
+
+  const existingMcp = settings.mcpServers;
+  const mcpServers: Record<string, unknown> =
+    existingMcp && typeof existingMcp === 'object' && !Array.isArray(existingMcp)
+      ? { ...(existingMcp as Record<string, unknown>) }
+      : {};
+  const mcpArgs = [serverScript, '--global-path', globalPath];
+  if (workspacePath) mcpArgs.push('--workspace-path', workspacePath);
+  mcpServers['groundwork'] = { command: 'node', args: mcpArgs };
+  settings.mcpServers = mcpServers;
+
+  await vscode.workspace.fs.createDirectory(vscode.Uri.file(claudeDir));
+  await vscode.workspace.fs.writeFile(
+    vscode.Uri.file(claudeSettingsPath),
+    Buffer.from(JSON.stringify(settings, null, 2) + '\n', 'utf-8'),
+  );
+}
+
 export async function activate(ctx: vscode.ExtensionContext) {
   const config = vscode.workspace.getConfiguration('groundwork');
 
@@ -73,6 +110,14 @@ export async function activate(ctx: vscode.ExtensionContext) {
   }
   await reindex(db, vaultSources);
   db.saveToDisk();
+
+  // Keep ~/.claude/settings.json in sync with the current workspace vault.
+  // This repairs configs written before --workspace-path support was added.
+  if (manager.workspacePath) {
+    updateClaudeMcpConfig(ctx.extensionPath, globalPath, manager.workspacePath).catch(() => {
+      // Non-fatal — MCP config is optional
+    });
+  }
 
   // Wire write-through: file writes → DB updates
   const wireWriteThrough = (store: import('./vault/store').VaultStore) => {
@@ -851,31 +896,8 @@ export async function activate(ctx: vscode.ExtensionContext) {
       }
 
       // Register Groundwork MCP server in ~/.claude/settings.json
-      const claudeSettingsPath = path.join(claudeDir, 'settings.json');
-      const serverScript = path.join(ctx.extensionPath, 'out', 'mcp', 'server.js');
       try {
-        let settings: Record<string, unknown> = {};
-        try {
-          const raw = await vscode.workspace.fs.readFile(vscode.Uri.file(claudeSettingsPath));
-          const parsed = JSON.parse(Buffer.from(raw).toString('utf-8'));
-          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-            settings = parsed as Record<string, unknown>;
-          }
-        } catch { /* file doesn't exist or isn't valid JSON — start fresh */ }
-
-        const existingMcp = settings.mcpServers;
-        const mcpServers: Record<string, unknown> =
-          existingMcp && typeof existingMcp === 'object' && !Array.isArray(existingMcp)
-            ? { ...(existingMcp as Record<string, unknown>) }
-            : {};
-        const mcpArgs = [serverScript, '--global-path', globalPath];
-        if (manager.workspacePath) { mcpArgs.push('--workspace-path', manager.workspacePath); }
-        mcpServers['groundwork'] = { command: 'node', args: mcpArgs };
-        settings.mcpServers = mcpServers;
-        await vscode.workspace.fs.writeFile(
-          vscode.Uri.file(claudeSettingsPath),
-          Buffer.from(JSON.stringify(settings, null, 2) + '\n', 'utf-8'),
-        );
+        await updateClaudeMcpConfig(ctx.extensionPath, globalPath, manager.workspacePath);
       } catch {
         // Non-fatal — MCP config is optional
       }

@@ -24,7 +24,7 @@ function getArg(name: string, fallback: string): string {
 }
 
 const globalPath = getArg('global-path', path.join(os.homedir(), '.groundwork'));
-const workspacePath = getArg('workspace-path', '');
+let workspacePath = getArg('workspace-path', '');
 
 // --- Init DB ---
 const dbPath = path.join(globalPath, '.index.db');
@@ -38,12 +38,12 @@ if (workspacePath && fs.existsSync(workspacePath)) {
 }
 
 function storeForPath(filePath: string): VaultStore {
-  if (workspaceStore && filePath.startsWith(workspacePath)) return workspaceStore;
+  if (workspaceStore && filePath.startsWith(workspacePath + path.sep)) return workspaceStore;
   return globalStore;
 }
 
 function scopeForPath(filePath: string): VaultScope {
-  return (workspaceStore && filePath.startsWith(workspacePath)) ? 'workspace' : 'global';
+  return (workspaceStore && filePath.startsWith(workspacePath + path.sep)) ? 'workspace' : 'global';
 }
 
 function defaultScope(): VaultScope {
@@ -52,6 +52,20 @@ function defaultScope(): VaultScope {
 
 function rootForScope(scope: VaultScope): string {
   return scope === 'workspace' && workspacePath ? workspacePath : globalPath;
+}
+
+/** Ensure a workspace vault is initialized, optionally from a per-call path override. */
+async function lazyEnsureWorkspace(perCallPath?: string): Promise<void> {
+  const targetPath = perCallPath || workspacePath;
+  if (!targetPath || !fs.existsSync(targetPath)) return;
+  // Reject paths that aren't absolute or don't point to a .groundwork directory.
+  if (!path.isAbsolute(targetPath) || path.basename(targetPath) !== '.groundwork') return;
+  if (workspaceStore && (!perCallPath || perCallPath === workspacePath)) return;
+
+  workspacePath = targetPath;
+  workspaceStore = new VaultStore(targetPath, 'workspace');
+  await reindex(db, [{ rootDir: targetPath, scope: 'workspace' }]);
+  db.saveToDisk();
 }
 
 /** Write a note file + update DB (write-through). */
@@ -104,6 +118,25 @@ async function main() {
   await db.open();
   initSchema(db);
 
+  // If --workspace-path wasn't provided, infer it from existing DB rows so we
+  // include workspace tasks without requiring a config change.
+  if (!workspacePath) {
+    const sample = db.get<{ path: string }>(
+      "SELECT path FROM notes WHERE scope = 'workspace' LIMIT 1"
+    );
+    if (sample?.path) {
+      let p = path.dirname(sample.path);
+      while (p && p !== path.dirname(p)) {
+        if (path.basename(p) === '.groundwork' && fs.existsSync(p)) {
+          workspacePath = p;
+          workspaceStore = new VaultStore(workspacePath, 'workspace');
+          break;
+        }
+        p = path.dirname(p);
+      }
+    }
+  }
+
   // Reindex on startup
   const sources: VaultSource[] = [{ rootDir: globalPath, scope: 'global' }];
   if (workspaceStore) sources.push({ rootDir: workspacePath, scope: 'workspace' });
@@ -112,7 +145,7 @@ async function main() {
 
   const server = new McpServer(
     { name: 'groundwork', version: '0.5.0' },
-    { instructions: 'Groundwork vault management. Use list_tasks to see tasks, get_note to read details, update_note to change fields. Prefer path over shorthand for updates.' }
+    { instructions: 'Groundwork vault management. Use list_tasks to see tasks, get_note to read details, update_note to change fields. Prefer path over shorthand for updates. Pass workspace_path to any tool to scope results to a specific project vault.' }
   );
 
   // ── list_tasks ──
@@ -128,9 +161,11 @@ async function main() {
         context: z.string().optional().describe('Filter by @-context'),
         scope: z.enum(['global', 'workspace']).optional().describe('Filter by vault scope'),
         limit: z.number().optional().describe('Max results (default 50)'),
+        workspace_path: z.string().optional().describe('Absolute path to a workspace .groundwork dir. When passed, includes workspace-scoped results.'),
       },
     },
     async (params) => {
+      await lazyEnsureWorkspace(params.workspace_path);
       const filter: TaskFilter = {
         status: params.status,
         priority: params.priority,
@@ -164,9 +199,12 @@ async function main() {
       description: 'Get full content of a note or task by path or shorthand (e.g. N1, A2).',
       inputSchema: {
         ref: z.string().describe('Absolute path, relative path, or shorthand (N1, A2, etc.)'),
+        workspace_path: z.string().optional().describe('Absolute path to a workspace .groundwork dir.'),
       },
     },
-    async ({ ref }) => {
+    async (params) => {
+      await lazyEnsureWorkspace(params.workspace_path);
+      const { ref } = params;
       const filePath = resolveRef(db, ref, globalPath, workspacePath || undefined);
       if (!filePath) return invalidRef(`Cannot resolve ref: ${ref}`);
 
@@ -201,9 +239,11 @@ Exception: if the user said "just capture it", "quick note", or similar, skip th
         context: z.array(z.string()).optional().describe('GTD contexts (e.g. @computer)'),
         body: z.string().optional().describe('Task body (markdown). Generate from context the user provides. Omit if the user declines to add context.'),
         scope: z.enum(['global', 'workspace']).optional().describe('Vault scope (default: workspace if available)'),
+        workspace_path: z.string().optional().describe('Absolute path to a workspace .groundwork dir. Overrides the default scope for this call.'),
       },
     },
     async (params) => {
+      await lazyEnsureWorkspace(params.workspace_path);
       const scope = params.scope ?? defaultScope();
       const root = rootForScope(scope);
       const store = scope === 'workspace' && workspaceStore ? workspaceStore : globalStore;
@@ -256,9 +296,11 @@ Exception: if the user said "just capture it", "quick note", or similar, skip th
         project: z.string().optional().describe('Project name'),
         tags: z.array(z.string()).optional().describe('Tags'),
         scope: z.enum(['global', 'workspace']).optional().describe('Vault scope'),
+        workspace_path: z.string().optional().describe('Absolute path to a workspace .groundwork dir. Overrides the default scope for this call.'),
       },
     },
     async (params) => {
+      await lazyEnsureWorkspace(params.workspace_path);
       const scope = params.scope ?? 'global';
       const root = rootForScope(scope);
       const store = scope === 'workspace' && workspaceStore ? workspaceStore : globalStore;
@@ -298,6 +340,7 @@ Exception: if the user said "just capture it", "quick note", or similar, skip th
       description: 'Update fields on an existing note or task. If status changes on a task, the file is moved to the appropriate directory.',
       inputSchema: {
         ref: z.string().describe('Path or shorthand'),
+        workspace_path: z.string().optional().describe('Absolute path to a workspace .groundwork dir.'),
         fields: z.object({
           title: z.string().optional(),
           status: z.enum(['inbox', 'next', 'active', 'waiting', 'someday', 'done', 'cancelled']).optional(),
@@ -311,7 +354,9 @@ Exception: if the user said "just capture it", "quick note", or similar, skip th
         }).describe('Fields to update'),
       },
     },
-    async ({ ref, fields }) => {
+    async (params) => {
+      await lazyEnsureWorkspace(params.workspace_path);
+      const { ref, fields } = params;
       const filePath = resolveRef(db, ref, globalPath, workspacePath || undefined);
       if (!filePath) return invalidRef(`Cannot resolve ref: ${ref}`);
 
@@ -360,9 +405,12 @@ Exception: if the user said "just capture it", "quick note", or similar, skip th
         ref: z.string().describe('Path or shorthand'),
         target_scope: z.enum(['global', 'workspace']).optional().describe('Target vault scope'),
         target_type: z.enum(['note', 'decision', 'project', 'reference', 'log']).optional().describe('Target type (changes directory)'),
+        workspace_path: z.string().optional().describe('Absolute path to a workspace .groundwork dir.'),
       },
     },
-    async ({ ref, target_scope, target_type }) => {
+    async (params) => {
+      await lazyEnsureWorkspace(params.workspace_path);
+      const { ref, target_scope, target_type } = params;
       const filePath = resolveRef(db, ref, globalPath, workspacePath || undefined);
       if (!filePath) return invalidRef(`Cannot resolve ref: ${ref}`);
 
@@ -416,9 +464,11 @@ Exception: if the user said "just capture it", "quick note", or similar, skip th
         status: z.string().optional().describe('Filter by status'),
         scope: z.enum(['global', 'workspace']).optional().describe('Filter by scope'),
         limit: z.number().optional().describe('Max results (default 20)'),
+        workspace_path: z.string().optional().describe('Absolute path to a workspace .groundwork dir. When passed, includes workspace-scoped results.'),
       },
     },
     async (params) => {
+      await lazyEnsureWorkspace(params.workspace_path);
       const results = searchNotes(
         db,
         params.query,
@@ -440,9 +490,12 @@ Exception: if the user said "just capture it", "quick note", or similar, skip th
     'daily_briefing',
     {
       description: 'Get a structured daily briefing of current work.',
-      inputSchema: {},
+      inputSchema: {
+        workspace_path: z.string().optional().describe('Absolute path to a workspace .groundwork dir.'),
+      },
     },
-    async () => {
+    async (params) => {
+      await lazyEnsureWorkspace(params.workspace_path);
       const todayStr = new Date().toISOString().slice(0, 10);
       const soonDate = new Date();
       soonDate.setDate(soonDate.getDate() + 3);
@@ -495,9 +548,12 @@ Exception: if the user said "just capture it", "quick note", or similar, skip th
     'weekly_review',
     {
       description: 'Get structured data for a GTD weekly review.',
-      inputSchema: {},
+      inputSchema: {
+        workspace_path: z.string().optional().describe('Absolute path to a workspace .groundwork dir.'),
+      },
     },
-    async () => {
+    async (params) => {
+      await lazyEnsureWorkspace(params.workspace_path);
       const weekAgoStr = new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10);
       const threeDaysAgoStr = new Date(Date.now() - 3 * 86_400_000).toISOString().slice(0, 10);
 
@@ -546,9 +602,12 @@ Exception: if the user said "just capture it", "quick note", or similar, skip th
       description: 'Move a note to the archive directory.',
       inputSchema: {
         ref: z.string().describe('Path or shorthand'),
+        workspace_path: z.string().optional().describe('Absolute path to a workspace .groundwork dir.'),
       },
     },
-    async ({ ref }) => {
+    async (params) => {
+      await lazyEnsureWorkspace(params.workspace_path);
+      const { ref } = params;
       const filePath = resolveRef(db, ref, globalPath, workspacePath || undefined);
       if (!filePath) return invalidRef(`Cannot resolve ref: ${ref}`);
 
@@ -588,9 +647,12 @@ Exception: if the user said "just capture it", "quick note", or similar, skip th
       description: 'Permanently delete a note. Only works on archived files or cancelled tasks.',
       inputSchema: {
         ref: z.string().describe('Path or shorthand'),
+        workspace_path: z.string().optional().describe('Absolute path to a workspace .groundwork dir.'),
       },
     },
-    async ({ ref }) => {
+    async (params) => {
+      await lazyEnsureWorkspace(params.workspace_path);
+      const { ref } = params;
       const filePath = resolveRef(db, ref, globalPath, workspacePath || undefined);
       if (!filePath) return invalidRef(`Cannot resolve ref: ${ref}`);
 

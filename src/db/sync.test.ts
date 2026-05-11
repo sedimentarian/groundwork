@@ -143,6 +143,44 @@ describe('reindex', () => {
     expect(rows[1].scope).toBe('workspace');
   });
 
+  it('should preserve rows from unscanned vaults during partial reindex', async () => {
+    // Setup: workspace vault with its own file
+    const workspaceDir = path.join(tmpDir, 'workspace-vault');
+    fs.mkdirSync(workspaceDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(workspaceDir, 'workspace-task.md'),
+      [
+        '---',
+        'title: Workspace Task',
+        'type: task',
+        'status: next',
+        'created: 2026-01-01T00:00:00.000Z',
+        '---',
+        'Workspace body',
+      ].join('\n')
+    );
+    fs.writeFileSync(
+      path.join(vaultDir, 'inbox', 'global-task.md'),
+      '---\ntitle: Global Task\ntype: task\nstatus: inbox\n---\nGlobal body.'
+    );
+
+    // Index both vaults
+    await reindex(db, [
+      { rootDir: vaultDir, scope: 'global' },
+      { rootDir: workspaceDir, scope: 'workspace' },
+    ]);
+
+    // Confirm workspace row exists
+    const before = db.get<{ title: string }>('SELECT title FROM notes WHERE scope = ?', ['workspace']);
+    expect(before?.title).toBe('Workspace Task');
+
+    // Reindex with ONLY global vault — workspace row must survive
+    await reindex(db, [{ rootDir: vaultDir, scope: 'global' }]);
+
+    const after = db.get<{ title: string }>('SELECT title FROM notes WHERE scope = ?', ['workspace']);
+    expect(after?.title).toBe('Workspace Task');
+  });
+
   it('should skip hidden directories like .sessions', async () => {
     fs.mkdirSync(path.join(vaultDir, '.sessions'), { recursive: true });
     fs.writeFileSync(
