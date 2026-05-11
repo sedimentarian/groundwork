@@ -59,6 +59,7 @@ async function updateClaudeMcpConfig(
   mcpServers['groundwork'] = { command: 'node', args: mcpArgs };
   settings.mcpServers = mcpServers;
 
+  await vscode.workspace.fs.createDirectory(vscode.Uri.file(claudeDir));
   await vscode.workspace.fs.writeFile(
     vscode.Uri.file(claudeSettingsPath),
     Buffer.from(JSON.stringify(settings, null, 2) + '\n', 'utf-8'),
