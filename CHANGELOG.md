@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.6.2 — 2026-05-10
+
+### Fixed
+- **MCP workspace tasks no longer wiped on startup** — the MCP server was calling `reindex()` with only the global vault, which deleted all workspace-scoped rows from the SQLite DB. Cleanup is now restricted to paths under the vault roots that were actually scanned.
+- **Workspace vault inferred from DB** — when the MCP server is launched without `--workspace-path` (e.g. existing installs), it now queries the DB for workspace-scoped rows and infers the vault root automatically. No config change required.
+- **`~/.claude/settings.json` auto-updated on activation** — the extension now writes `--workspace-path` into the MCP server config whenever a workspace vault is present, repairing stale configs without requiring a manual "Generate CLAUDE.md" run.
+- **`~/.claude/` directory created if missing** — the MCP config write no longer fails silently on clean installs where `~/.claude/` does not yet exist.
+
+### Added
+- `list_tasks`, `search`, `daily_briefing`, and `weekly_review` MCP tools now accept an optional `workspace_path` parameter so callers can explicitly supply a workspace vault per-request.
+
 ## 0.6.1 — 2026-05-10
 
 ### Fixed
