@@ -24,7 +24,7 @@ function getArg(name: string, fallback: string): string {
 }
 
 const globalPath = getArg('global-path', path.join(os.homedir(), '.groundwork'));
-const workspacePath = getArg('workspace-path', '');
+let workspacePath = getArg('workspace-path', '');
 
 // --- Init DB ---
 const dbPath = path.join(globalPath, '.index.db');
@@ -103,6 +103,25 @@ function ok(data: unknown) {
 async function main() {
   await db.open();
   initSchema(db);
+
+  // If --workspace-path wasn't provided, infer it from existing DB rows so we
+  // include workspace tasks without requiring a config change.
+  if (!workspacePath) {
+    const sample = db.get<{ path: string }>(
+      "SELECT path FROM notes WHERE scope = 'workspace' LIMIT 1"
+    );
+    if (sample?.path) {
+      let p = path.dirname(sample.path);
+      while (p && p !== path.dirname(p)) {
+        if (path.basename(p) === '.groundwork' && fs.existsSync(p)) {
+          workspacePath = p;
+          workspaceStore = new VaultStore(workspacePath, 'workspace');
+          break;
+        }
+        p = path.dirname(p);
+      }
+    }
+  }
 
   // Reindex on startup
   const sources: VaultSource[] = [{ rootDir: globalPath, scope: 'global' }];
